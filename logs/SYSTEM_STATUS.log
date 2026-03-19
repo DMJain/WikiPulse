@@ -10,3 +10,10 @@
 [2026-03-19T22:30:00+05:30] [INFO] Maven clean compile executed successfully (Build time: ~5s). All Big Tech dependencies resolved.
 [2026-03-19T22:30:00+05:30] [INFO] Spotless apply/check enforced Google Java Style correctly.
 [2026-03-19T22:30:00+05:30] [INFO] Maven test executed successfully (Build time: ~15s). Testcontainers reliably spun up Postgres, Redis, and Kafka without orchestration issues.
+[2026-03-19T22:40:52+05:30] [TASK 2 COMPLETE] - [VERIFICATION PASSED] - [2026-03-19T22:40:52+05:30]
+[2026-03-19T22:40:52+05:30] [INFO] Infrastructure validation successful. Verification output details:
+Topic: wiki-edits      TopicId: jwvnYPZKTKWUShzCyoYihA PartitionCount: 3     ReplicationFactor: 1    Configs:
+        Topic: wiki-edits      Partition: 0    Leader: 1     Replicas: 1     Isr: 1
+        Topic: wiki-edits      Partition: 1    Leader: 1     Replicas: 1     Isr: 1
+        Topic: wiki-edits      Partition: 2    Leader: 1     Replicas: 1     Isr: 1
+[2026-03-19T22:40:52+05:30] [INFO] Infrastructure stabilized. All 4 target containers (postgres, redis, zookeeper, kafka) are Up/Healthy.

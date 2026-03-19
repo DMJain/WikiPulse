@@ -1,51 +1,16 @@
-# ==============================================================================
-# WikiPulse Ingestor — Application Configuration
-# ==============================================================================
-
 spring:
   application:
     name: wikipulse-ingestor
-
-  # --------------------------------------------------------------------------
-  # Virtual Threads (Java 21 / JEP 444)
-  # --------------------------------------------------------------------------
   threads:
     virtual:
       enabled: true
-
-  # --------------------------------------------------------------------------
-  # JPA / Hibernate — defer datasource initialization until Docker infra
-  # is configured in Task 2. Auto-config is excluded for now.
-  # --------------------------------------------------------------------------
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
-      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration
-
-# ==============================================================================
-# Server
-# ==============================================================================
-server:
-  port: 8080
-
-# ==============================================================================
-# Actuator & Observability
-# ==============================================================================
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,metrics,prometheus,info
-  endpoint:
-    health:
-      show-details: always
-    prometheus:
-      enabled: true
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-    tags:
-      application: ${spring.application.name}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 2147483647
+      properties:
+        enable.idempotence: true
+        compression.type: snappy
