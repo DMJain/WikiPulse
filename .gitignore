@@ -1,0 +1,56 @@
+# ==============================================================================
+# WikiPulse .gitignore
+# ==============================================================================
+
+# ---------- Build output ----------
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# ---------- IDE ----------
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+### Eclipse ###
+.classpath
+.project
+.settings/
+bin/
+
+### VS Code ###
+.vscode/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+
+# ---------- Maven ----------
+.m2/
+*.jar
+*.war
+*.ear
+
+# ---------- Logs ----------
+*.log
+!logs/SYSTEM_STATUS.log
+
+# ---------- Environment ----------
+.env
+*.env.local
+
+# ---------- Misc ----------
+*.swp
+*.swo
+*~
