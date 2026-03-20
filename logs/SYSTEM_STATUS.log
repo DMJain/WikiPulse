@@ -18,3 +18,5 @@ Topic: wiki-edits      TopicId: jwvnYPZKTKWUShzCyoYihA PartitionCount: 3     Rep
         Topic: wiki-edits      Partition: 2    Leader: 1     Replicas: 1     Isr: 1
 [2026-03-19T22:40:52+05:30] [INFO] Infrastructure stabilized. All 4 target containers (postgres, redis, zookeeper, kafka) are Up/Healthy.
 [2026-03-19T23:11:45+05:30] [TASK 3 COMPLETE] - [VERIFICATION PASSED]
+[2026-03-21T01:53:00+05:30] [TASK 4 COMPLETE] - [VERIFICATION PASSED]
+[2026-03-21T01:53:00+05:30] [INFO] Reactive Wikipedia SSE Client implementation completed and verified via 30-second live test. Observed 340 events in ~20 seconds, representing an approximate ingestion rate of 17 EPS. Reconnection logic and backpressure strategy (ADR-009) confirmed operational.
