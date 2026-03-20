@@ -4,6 +4,11 @@ spring:
   threads:
     virtual:
       enabled: true
+  datasource:
+    url: jdbc:postgresql://localhost:5432/wikipulsedb
+    username: wikipulse
+    password: wikipulse_password
+    driver-class-name: org.postgresql.Driver
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:

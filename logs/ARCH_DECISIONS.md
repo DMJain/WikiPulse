@@ -227,3 +227,25 @@ The Kafka producer will be configured for **Idempotence** (`enable.idempotence=t
 ### Trade-offs
 - Slight producer initialization overhead to establish the PID.
 - Increased CPU usage on the producer and broker side due to Snappy compression, though network I/O savings typically outweigh this cost.
+
+---
+
+## ADR-009: Reactive WebFlux SSE Client & Backpressure Strategy
+
+**Date:** 2026-03-21  
+**Status:** Accepted
+
+### Context
+WikiPulse consumes the Wikipedia `recentchange` Server-Sent Events (SSE) stream. This is a long-lived, high-throughput HTTP connection. Traditional thread-per-request blocking HTTP clients (like `RestTemplate`) are not suitable because they can exhaust thread pools and handle bursts poorly.
+
+### Decision
+We will use **Spring WebFlux `WebClient`** to consume the SSE stream reactively. We will also implement a strict backpressure strategy using `.onBackpressureBuffer(...)` and robust reconnection logic using `.retryWhen(Retry.backoff(...))`.
+
+### Rationale
+- **WebClient over RestTemplate:** WebClient uses non-blocking I/O (via Netty), allowing a single carrier thread to manage the long-lived HTTP connection without blocking.
+- **Backpressure Strategy:** If the internal processing lags behind the stream's emission rate (e.g., 500 events/second bursts), `onBackpressureBuffer(10000)` will buffer up to 10,000 events. If the buffer overflows, reactive streams default to dropping or signaling errors (enforcing backpressure upstream). This prevents OutOfMemoryErrors and ensures JVM stability at the cost of acceptable data shedding during extreme degradation.
+- **Exponential Backoff:** The Wikipedia stream drops connections routinely. `Retry.backoff(Long.MAX_VALUE, Duration.ofSeconds(2)).maxBackoff(Duration.ofSeconds(30))` ensures continuous, polite reconnection attempts without overwhelming the upstream API or crashing our process.
+
+### Trade-offs
+- Reactive pipelines can be harder to debug mechanically mechanically, mitigated by our decision to use Virtual Threads (ADR-002).
+- Dropping events on buffer full violates strict "zero data loss," but is an intentional circuit-breaker to prioritize system survival over 100% ingestion during unrecoverable stalls.
