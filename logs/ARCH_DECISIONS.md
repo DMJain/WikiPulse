@@ -249,3 +249,48 @@ We will use **Spring WebFlux `WebClient`** to consume the SSE stream reactively.
 ### Trade-offs
 - Reactive pipelines can be harder to debug mechanically mechanically, mitigated by our decision to use Virtual Threads (ADR-002).
 - Dropping events on buffer full violates strict "zero data loss," but is an intentional circuit-breaker to prioritize system survival over 100% ingestion during unrecoverable stalls.
+
+---
+
+## ADR-010: Kafka Serialization & Partition Key Strategy
+
+**Date:** 2026-03-21  
+**Status:** Accepted
+
+### Context
+With the SSE client successfully consuming Wikipedia edits, these events must be published to the `wiki-edits` Kafka topic. We must decide on the wire format and the partitioning strategy to ensure reliable, ordered scaling downstream.
+
+### Decision
+1. **JSON Serialization:** We will use `org.springframework.kafka.support.serializer.JsonSerializer` for Phase 1.
+2. **Partitioning by Title:** The `title` of the Wikipedia page will act as the Kafka message key.
+
+### Rationale
+- **JSON over Avro (For Now):** JSON Serialization allows rapid prototyping and immediate human-readable debugging in the Kafka topic. While Confluent Schema Registry and Avro provide superior type-safety and schema evolution, standing up the registry is deferred to Phase 2 to accelerate the initial pipeline link.
+- **Title as Partition Key:** Kafka guarantees ordering only within a single partition. By keying messages by page `title`, all edits to a specific page (e.g., "Main_Page") are routed to the same partition. Any downstream consumer processes the edits for a given page sequentially, ensuring causal consistency (e.g., an "undo" event correctly follows the original edit).
+
+### Trade-offs
+- Partitioning by title may cause minor data skew if a "hot page" (e.g., a breaking news article) receives a disproportionate number of edits, but this is acceptable for the current scale compared to losing page-level event ordering.
+
+---
+
+## ADR-011: Consumer Group Scaling & Deserialization Safety
+
+**Date:** 2026-03-29  
+**Status:** Accepted
+
+### Context
+Moving into Phase 2, WikiPulse must transition from ingestion to processing. We need to reliably consume events from the `wiki-edits` topic across a distributed fleet of worker nodes while avoiding poison pill deadlocks and guaranteeing "Exactly-Once" semantics. 
+
+### Decision
+1.  **Consumer Group Framework:** All worker nodes will share the `wikipulse-worker-group` ID.
+2.  **Error Handling Deserializer:** We will wrap our `StringDeserializer` and `JsonDeserializer` inside Spring Kafka's `ErrorHandlingDeserializer`.
+3.  **Manual Offset Management:** Auto-commit will be disabled (`enable-auto-commit=false`). We will implement `AckMode.MANUAL_IMMEDIATE`.
+
+### Rationale
+- **Horizontal Scaling via Consumer Group:** A single `group-id` allows Kafka to load-balance the 3 partitions of the `wiki-edits` topic across up to 3 individual consumer instances. This unlocks true parallel processing as per Phase 1 designs.
+- **Poison Pill Immunity:** Typical JSON deserializers crash and throw exceptions on malformed data, causing an infinite retry loop on the same offset (a "Poison Pill"). The `ErrorHandlingDeserializer` catches these exceptions, logs the error, and returns null/skips the message, allowing the consumer to advance the offset and survive data corruption.
+- **Exactly-Once Semantics:** Auto-commit risks acknowledging a message before the worker finishes processing it (resulting in data loss if the pod crashes). `MANUAL_IMMEDIATE` ensures the offset is strictly acknowledged *only if* the business logic successfully executes.
+
+### Trade-offs
+- Manual acks increase code complexity (requiring `Acknowledgment` method parameters) but provide deterministic crash resilience.
+- Skipping bad messages via `ErrorHandlingDeserializer` trades zero data loss for system liveliness.

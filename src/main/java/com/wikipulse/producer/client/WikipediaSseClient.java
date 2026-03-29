@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.util.retry.Retry;
@@ -22,10 +23,13 @@ public class WikipediaSseClient {
       "https://stream.wikimedia.org/v2/stream/recentchange";
 
   private final WebClient webClient;
+  private final KafkaTemplate<String, Object> kafkaTemplate;
   private final AtomicInteger eventCount = new AtomicInteger(0);
 
-  public WikipediaSseClient(WebClient.Builder webClientBuilder) {
+  public WikipediaSseClient(
+      WebClient.Builder webClientBuilder, KafkaTemplate<String, Object> kafkaTemplate) {
     this.webClient = webClientBuilder.build();
+    this.kafkaTemplate = kafkaTemplate;
   }
 
   @EventListener(ApplicationReadyEvent.class)
@@ -44,13 +48,14 @@ public class WikipediaSseClient {
         .doOnNext(
             event -> {
               int count = eventCount.incrementAndGet();
-              if (count % 20 == 0) {
+              if (count % 100 == 0) {
                 log.info(
-                    "Parsed event #{}: User: '{}', Title: '{}'",
+                    "Ingested and published event #{}: User: '{}', Title: '{}'",
                     count,
                     event.user(),
                     event.title());
               }
+              kafkaTemplate.send("wiki-edits", event.title(), event);
             })
         .doOnError(e -> log.error("Stream error: {}", e.getMessage()))
         .retryWhen(
@@ -72,7 +77,7 @@ public class WikipediaSseClient {
   }
 
   private WikipediaSseEvent mapToWikipediaSseEvent(Map<String, Object> rawEvent) {
-    return new WikipediaSseEvent(rawEvent); // We create local DTO as per prompt
+    return new WikipediaSseEvent(rawEvent);
   }
 
   private WikiEditEvent mapToWikiEditEvent(WikipediaSseEvent sseEvent) {
