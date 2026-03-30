@@ -75,6 +75,28 @@ public class ProcessedEdit implements Persistable<Long> {
     this.editTimestamp = editTimestamp;
   }
 
+  @Column(name = "is_bot")
+  private Boolean isBot;
+
+  @Column(name = "complexity_score")
+  private Integer complexityScore;
+
+  public Boolean getIsBot() {
+    return isBot;
+  }
+
+  public void setIsBot(Boolean isBot) {
+    this.isBot = isBot;
+  }
+
+  public Integer getComplexityScore() {
+    return complexityScore;
+  }
+
+  public void setComplexityScore(Integer complexityScore) {
+    this.complexityScore = complexityScore;
+  }
+
   @Override
   public boolean isNew() {
     return true;

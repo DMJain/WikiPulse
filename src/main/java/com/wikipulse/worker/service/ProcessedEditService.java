@@ -19,8 +19,10 @@ public class ProcessedEditService {
   }
 
   @Transactional
-  public void saveEdit(WikiEditEvent event) {
+  public void saveEdit(WikiEditEvent event, boolean isBot, int complexityScore) {
     ProcessedEdit entity = new ProcessedEdit();
+    entity.setIsBot(isBot);
+    entity.setComplexityScore(complexityScore);
     entity.setId(event.id());
     entity.setUserName(event.user());
     entity.setPageTitle(event.title());

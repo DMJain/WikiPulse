@@ -347,4 +347,24 @@ In Phase 2, deduplicated events must be persisted for downstream analytics. We n
 - Setting column types explicitly (e.g. `TEXT`) loosely binds the entity definition to PostgreSQL.
 - Heavy indexing incurs a minor write-penalty, which is an acceptable cost (as write throughput is buffered by Kafka) to safeguard Phase 3 fast read latency.
 
+---
+
+## ADR-014: Scoring & Bot Detection
+
+**Date:** 2026-03-30
+**Status:** Accepted
+
+### Context
+Phase 2 mandates real-time analytical enrichment of streaming events before persistence. Specifically, we need to calculate an edit's complexity and detect rapid-fire bot behavior from users executing >5 edits per 60 seconds. 
+
+### Decision
+1. **Complexity Formula:** A stateless heuristic `comment.length() + (title.length() * 2)`.
+2. **Bot Detection:** Stateful velocity tracking utilizing Redis atomic `INCR` commands bound by a 60-second TTL.
+3. **Execution Placement:** Analytics will execute *after* deduplication but *before* database persistence.
+
+### Rationale
+- **Redis for Velocity vs PostgreSQL:** Validating user velocity chronologically against PostgreSQL would require expensive `COUNT()` aggregations over live indexed columns, risking a collapse under firehose RPS. Redis provides atomic time-complexity `O(1)` counters (`INCR`), perfectly suited for a distributed, transient 60-second window.
+- **Consumer Injection:** Running analytics sequentially inside the Kafka Consumer thread keeps the analytical side-effects strictly atomic with the offset commit.
+
+
 

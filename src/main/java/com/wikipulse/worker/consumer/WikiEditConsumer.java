@@ -1,6 +1,7 @@
 package com.wikipulse.worker.consumer;
 
 import com.wikipulse.producer.model.WikiEditEvent;
+import com.wikipulse.worker.service.AnalyticsService;
 import com.wikipulse.worker.service.DeduplicationService;
 import com.wikipulse.worker.service.ProcessedEditService;
 import org.slf4j.Logger;
@@ -18,11 +19,15 @@ public class WikiEditConsumer {
 
   private final DeduplicationService deduplicationService;
   private final ProcessedEditService processedEditService;
+  private final AnalyticsService analyticsService;
 
   public WikiEditConsumer(
-      DeduplicationService deduplicationService, ProcessedEditService processedEditService) {
+      DeduplicationService deduplicationService,
+      ProcessedEditService processedEditService,
+      AnalyticsService analyticsService) {
     this.deduplicationService = deduplicationService;
     this.processedEditService = processedEditService;
+    this.analyticsService = analyticsService;
   }
 
   @KafkaListener(topics = "wiki-edits", groupId = "wikipulse-worker-group")
@@ -42,8 +47,20 @@ public class WikiEditConsumer {
         log.info(
             "[Partition-{}] Received Edit: '{}' by '{}'", partition, event.title(), event.user());
 
-        // Step B: Database Save
-        processedEditService.saveEdit(event);
+        // Step B: Analytics Enrichment
+        int complexity = analyticsService.calculateComplexity(event);
+        boolean isBot = analyticsService.detectBot(event.user());
+
+        if (isBot) {
+          log.warn(
+              "[Partition-{}] Bot Detected: User '{}', Score: {}",
+              partition,
+              event.user(),
+              complexity);
+        }
+
+        // Step C: Database Save with enriched values
+        processedEditService.saveEdit(event, isBot, complexity);
       }
 
       // Step C: Offset Commit
