@@ -294,3 +294,57 @@ Moving into Phase 2, WikiPulse must transition from ingestion to processing. We 
 ### Trade-offs
 - Manual acks increase code complexity (requiring `Acknowledgment` method parameters) but provide deterministic crash resilience.
 - Skipping bad messages via `ErrorHandlingDeserializer` trades zero data loss for system liveliness.
+
+---
+
+## ADR-012: Redis Deduplication Strategy
+
+**Date:** 2026-03-29  
+**Status:** Accepted
+
+### Context
+WikiPulse consumes events from Kafka across a distributed fleet of worker nodes. Since Kafka guarantees at-least-once delivery by default, and network timeouts can cause the producer to resend events, duplicate events can be processed. We require global idempotency to ensure Wikipedia edits are processed exactly once.
+
+### Decision
+1. **Redis for Distributed State Management:** We will use Redis to store whether an edit has already been processed by any worker. 
+2. **Atomic `setIfAbsent` Operation:** The idempotency check will utilize Redis's `SETNX` (via `opsForValue().setIfAbsent()`).
+3. **24-Hour TTL Strategy:** Every deduplication key stored in Redis will have a 24-hour Time-To-Live (TTL).
+
+### Rationale
+- **Redis vs local cache:** Using an external, centralized data store like Redis provides a single source of truth across all consumer nodes.
+- **Atomic Operations:** Utilizing `setIfAbsent()` executes the deduplication check and the setting of the processed status in a single, atomic operation within Redis. This prevents Time-Of-Check to Time-Of-Use (TOCTOU) race conditions which would occur if a separate `GET` followed by a `SET` was used, particularly when multiple parallel consumers receive duplicate messages simultaneously.
+- **Memory Management:** Without a TTL (Time-To-Live), the unbounded Wikipedia firehose would quickly trigger Redis out-of-memory (OOM) errors. We observe a 24-hour retention period is sufficient to catch delayed retry and duplicate messages from Kafka, balancing memory constraint and idempotency accuracy.
+
+### Trade-offs
+- Setting up an external mechanism demands deploying, scaling, and maintaining Redis.
+- If an edit retry arrives after 24 hours, it will not bypass our deduplication service and be processed again. This is extremely unlikely in practice given typical Kafka offset-retry lifecycles.
+
+---
+
+## ADR-013: Persistence Strategy & Write-Ahead Offset Commitment
+
+**Date:** 2026-03-29  
+**Status:** Accepted
+
+### Context
+In Phase 2, deduplicated events must be persisted for downstream analytics. We need to guarantee that no event is lost if the database is temporarily unavailable during processing, and we must optimize our schema for Phase 3's real-time queries.
+
+### Decision
+1. **Database engine:** PostgreSQL via Spring Data JPA.
+2. **Primary Key mapping:** We will map the Wikipedia-provided `id` directly to the `@Id` column of the `ProcessedEdit` entity instead of generating surrogate keys.
+3. **Commit Ordering:** We will enforce a strict "Write-Ahead" offset logic: Step A (Redis Check) -> Step B (Database `save()`) -> Step C (Kafka `acknowledge()`).
+4. **Analytical Indexing:** We mandate specialized composite indexes: `(user_name, edit_timestamp)` and `(page_title)`.
+
+### Rationale
+- **Primary Key Immunity:** Using Wikipedia's `id` as the natural primary key guarantees uniqueness at the lowest isolation layer. Even if the Redis TTL expires or fails, saving a duplicate id triggers a `ConstraintViolationException`, neutralizing the poison pill unconditionally.
+- **Write-Ahead Offset Commitment:** By saving to PostgreSQL *before* calling `acknowledge()`, we inherently treat Kafka as a Write-Ahead Log. If the JVM crashes synchronously after the DB write but before the ACK, Kafka will redeliver. The subsequent retry gracefully halts either at Redis (Step A) or Primary Key constraint check (Step B). If the DB write crashes, the omitted ACK correctly preserves the message for future retry.
+- **Analytical Indexes (Phase 3 readiness):** 
+  - `idx_user_timestamp` enables O(log n) performance for bounding box queries ("edits by User X over the last 15 minutes"). 
+  - `idx_page_title` allows high-speed aggregations for trending pages. 
+  Without these explicitly defined in DDL, Phase 3 analytics over millions of rows would degrade to full-table scans.
+
+### Trade-offs
+- Setting column types explicitly (e.g. `TEXT`) loosely binds the entity definition to PostgreSQL.
+- Heavy indexing incurs a minor write-penalty, which is an acceptable cost (as write throughput is buffered by Kafka) to safeguard Phase 3 fast read latency.
+
+
