@@ -1,7 +1,9 @@
 package com.wikipulse.worker.consumer;
 
 import com.wikipulse.producer.model.WikiEditEvent;
+import com.wikipulse.worker.metrics.WorkerMetrics;
 import com.wikipulse.worker.service.AnalyticsService;
+import io.micrometer.core.instrument.Timer;
 import com.wikipulse.worker.service.DeduplicationService;
 import com.wikipulse.worker.service.ProcessedEditService;
 import org.slf4j.Logger;
@@ -20,14 +22,17 @@ public class WikiEditConsumer {
   private final DeduplicationService deduplicationService;
   private final ProcessedEditService processedEditService;
   private final AnalyticsService analyticsService;
+  private final WorkerMetrics workerMetrics;
 
   public WikiEditConsumer(
       DeduplicationService deduplicationService,
       ProcessedEditService processedEditService,
-      AnalyticsService analyticsService) {
+      AnalyticsService analyticsService,
+      WorkerMetrics workerMetrics) {
     this.deduplicationService = deduplicationService;
     this.processedEditService = processedEditService;
     this.analyticsService = analyticsService;
+    this.workerMetrics = workerMetrics;
   }
 
   @KafkaListener(topics = "wiki-edits", groupId = "wikipulse-worker-group")
@@ -35,11 +40,13 @@ public class WikiEditConsumer {
       WikiEditEvent event,
       @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
       Acknowledgment acknowledgment) {
+    Timer.Sample sample = workerMetrics.startTimer();
     try {
       if (event != null) {
         // Step A: Redis Idempotency Check
         if (deduplicationService.isDuplicate(event.id())) {
           log.warn("[Duplicate Detected] Skipping edit {}", event.id());
+          workerMetrics.stopTimer(sample);
           acknowledgment.acknowledge();
           return;
         }
@@ -57,12 +64,15 @@ public class WikiEditConsumer {
               partition,
               event.user(),
               complexity);
+          workerMetrics.incrementBotsDetected();
         }
 
         // Step C: Database Save with enriched values
         processedEditService.saveEdit(event, isBot, complexity);
+        workerMetrics.incrementProcessed();
       }
 
+      workerMetrics.stopTimer(sample);
       // Step C: Offset Commit
       // Explicit manual acknowledgment ONLY after DB save succeeds
       acknowledgment.acknowledge();

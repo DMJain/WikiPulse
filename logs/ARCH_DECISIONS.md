@@ -366,5 +366,23 @@ Phase 2 mandates real-time analytical enrichment of streaming events before pers
 - **Redis for Velocity vs PostgreSQL:** Validating user velocity chronologically against PostgreSQL would require expensive `COUNT()` aggregations over live indexed columns, risking a collapse under firehose RPS. Redis provides atomic time-complexity `O(1)` counters (`INCR`), perfectly suited for a distributed, transient 60-second window.
 - **Consumer Injection:** Running analytics sequentially inside the Kafka Consumer thread keeps the analytical side-effects strictly atomic with the offset commit.
 
+---
 
+## ADR-015: Observability Strategy (Micrometer/Prometheus)
 
+**Date:** 2026-03-30
+**Status:** Accepted
+
+### Context
+Phase 2 mandates integrating observability to track internal metrics. We must monitor consumer lag and in-flight processing latency. Without these metrics, we cannot easily detect memory leaks or pipeline bottlenecks.
+
+### Decision
+1. **Metrics Collection:** Spring Boot Actuator with Micrometer bindings for Prometheus.
+2. **Key Application Metrics:**
+   - `wikipulse_processing_latency` (Timer)
+   - `wikipulse_edits_processed_total` (Counter)
+   - `wikipulse_bots_detected_total` (Counter)
+3. **Consumer Lag:** Export Kafka standard metrics, capturing consumer lag to monitor throughput against stream velocity.
+
+### Rationale
+- **Consumer Lag as a Scaling Signal:** If our pipeline processing latency exceeds the influx rate, consumer lag will grow uncontrollably. Monitoring this provides an early warning signal indicating a need to horizontally scale the worker fleet.
