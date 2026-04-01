@@ -55,7 +55,22 @@ public class WikipediaSseClient {
                     event.user(),
                     event.title());
               }
-              kafkaTemplate.send("wiki-edits", event.title(), event);
+              kafkaTemplate.send("wiki-edits", event.title(), event)
+                  .whenComplete((result, ex) -> {
+                    if (ex == null) {
+                      log.debug(
+                          "Successfully published edit {} to partition {} at offset {}",
+                          event.id(),
+                          result.getRecordMetadata().partition(),
+                          result.getRecordMetadata().offset());
+                    } else {
+                      log.error(
+                          "[CRITICAL ERROR] Failed to publish WikiEditEvent ID: {}. Reason: {}",
+                          event.id(),
+                          ex.getMessage(),
+                          ex);
+                    }
+                  });
             })
         .doOnError(e -> log.error("Stream error: {}", e.getMessage()))
         .retryWhen(

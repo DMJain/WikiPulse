@@ -28,6 +28,7 @@ spring:
       properties:
         enable.idempotence: true
         compression.type: snappy
+        max.in.flight.requests.per.connection: 5
     consumer:
       group-id: wikipulse-worker-group
       auto-offset-reset: earliest
