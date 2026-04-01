@@ -409,3 +409,19 @@ Phase 2 mandates integrating observability to track internal metrics. We must mo
 3. Added `wikipulse_errors_total` metric inside the consumer catch block, ensuring active visibility into processing failure rates.
 4. Refactored the `WorkerMetrics.stopTimer()` into a `finally` block to eradicate latency record survivorship-bias (where only successful saves were timed).
 **Consequences**: This guarantees worker partitions never freeze due to app-level poison pills. Failed events are safely quarantined in the DLT for future reprocessing, enforcing the "Zero Data Loss" architecture while keeping the pipeline flowing.
+
+---
+
+## ADR-018: Infrastructure Health & Determinism
+**Date**: 2026-04-01
+**Context**: Our `docker-compose.yml` relied on standard `depends_on` clauses which merely verify container start, not application readiness. This led to race conditions where Kafka attempted to register with Zookeeper before leader election completed, or the init-containers/app attempted to connect to an unready Kafka broker.
+**Decision**: We transitioned to healthcheck-driven startup sequencing using `condition: service_healthy`. Zookeeper now interrogates itself via the `ruok` netcat command.
+**Consequences**: Complete elimination of infrastructure race conditions. The data pipeline boots strictly sequentially, guaranteeing all cluster metadata nodes and message brokers are unconditionally healthy before ingress or worker operations commence. This fulfills Audit Item #5 and cements our Phase 3 Kubernetes readiness.
+
+---
+
+## ADR-019: Multi-Stage Containerization Strategy
+**Date**: 2026-04-01
+**Context**: Fat JARs running under default Docker base images bloat to over 500MB, expanding the CVE attack surface and slowing orchestration pull times. Additionally, running containers as `root` violates modern Kubernetes pod security standards.
+**Decision**: We transitioned to a two-stage Alpine-based Dockerfile. The build phase caches Maven layers aggressively (`dependency:go-offline`). The runtime phase uses a stripped `jre-alpine` image and strictly enforces a non-root `wikipulse` user. We leverage array-form entrypoints to guarantee signal propagation (`SIGTERM`) and set `JAVA_OPTS` to optimize for container heuristics and JEP 444 virtual thread parallelism.
+**Consequences**: The application container footprint shrinks drastically (target < 200MB). Container escape vulnerabilities are inherently mitigated by the minimal Alpine surface and dropped root capabilities. The JVM gracefully scales heuristics to available container limits, fortifying our Phase 3 Kubernetes transition.
