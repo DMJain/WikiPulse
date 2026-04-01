@@ -42,3 +42,8 @@ JVM GC Status: Extremely healthy. 0 Full GCs observed during the window. Heap ma
 [2026-03-30T22:35:00+05:30] [INFO] Observability Expansion verified. Micrometer and Prometheus successfully integrated. Average processing latency observed: ~6.3ms per edit. Kafka consumer lag metrics (`kafka_consumer_fetch_manager_records_lag`) are successfully exported to `/actuator/prometheus`.
 [2026-03-31T02:15:00+05:30] [PHASE 3 PREP, TASK 1 COMPLETE] - [VERIFICATION PASSED]
 [2026-03-31T02:15:00+05:30] [INFO] Reliable Async Publishing verified. Simulated Kafka broker outage successfully trapped by .whenComplete callback. Emitted log: [wikipulse-ingestor] [stor-producer-1] c.w.producer.client.WikipediaSseClient : [CRITICAL ERROR] Failed to publish WikiEditEvent ID: 2553300030. Reason: Failed to send
+[2026-04-01T22:05:45+05:30] [PHASE 3 PREP, TASK 2 COMPLETE] - [VERIFICATION PASSED]
+[2026-04-01T22:05:45+05:30] [INFO] Poison Pill test (ID: 999) injected and successfully triggered 3 retries (2s backoff) via DefaultErrorHandler. Message successfully quarantined to DLT.
+[2026-04-01T22:05:45+05:30] [INFO] Consumer dynamically proceeded to process message ID 1000 without stalling partition zero.
+[2026-04-01T22:05:45+05:30] [INFO] Metrics check: `wikipulse_errors_total` incremented by 1 in /actuator/prometheus successfully.
+[2026-04-01T22:05:45+05:30] [INFO] Confirmed DLT topic `wiki-edits-dlt` created with 3 partitions. Observed average processing latency: ~6.5ms (including caught exceptions).

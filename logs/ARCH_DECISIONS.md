@@ -386,3 +386,26 @@ Phase 2 mandates integrating observability to track internal metrics. We must mo
 
 ### Rationale
 - **Consumer Lag as a Scaling Signal:** If our pipeline processing latency exceeds the influx rate, consumer lag will grow uncontrollably. Monitoring this provides an early warning signal indicating a need to horizontally scale the worker fleet.
+
+---
+
+## ADR-016: Reliable Asynchronous Kafka Publishing (Phase 3 Prep)
+**Date**: 2026-03-31
+**Context**: The original Kafka producer implementation utilized a "fire-and-forget" pattern, ignoring the `SendResult` of `kafkaTemplate.send()`. In high-throughput environments, this masks network failures or broker rejections, risking silent data loss which violates the "Zero Data Loss" mandate.
+**Decision**: 
+1. We refactored `WikipediaSseClient` to capture the `CompletableFuture<SendResult<String, Object>>` returned by the KafkaTemplate.
+2. We attached a non-blocking `.whenComplete()` callback to log success metadata (partition, offset) directly or emit a `CRITICAL ERROR` log if the publish fails. This avoids blocking the reactive WebFlux pipeline with `.get()`.
+3. We configured `max.in.flight.requests.per.connection: 5` in `application.yml`, which pairs perfectly with `enable.idempotence: true` to ensure strictly ordered, duplicate-free publishing locally before acknowledgment.
+**Consequences**: The system is now fully aware of ingestion bottlenecks or broker disconnections. Failures will trigger alerts, and in-flight request limits will maintain strict ordering of events on the wire.
+
+---
+
+## ADR-017: Consumer Resilience & Dead Letter Topic (Phase 3 Prep)
+**Date**: 2026-04-01
+**Context**: The error handling in the `WikiEditConsumer` previously swallowed exceptions to prevent blocking the offset, but doing so meant failing messages would be infinitely retried without yielding the thread, creating poison-pill deadlocks.
+**Decision**: 
+1. We transitioned away from an infinite retry loop to a `DefaultErrorHandler` configured with a `DeadLetterPublishingRecoverer`.
+2. Messages failing sequentially for 3 attempts (with a 2s fixed backoff) will be routed to a quarantine topic: `wiki-edits-dlt`.
+3. Added `wikipulse_errors_total` metric inside the consumer catch block, ensuring active visibility into processing failure rates.
+4. Refactored the `WorkerMetrics.stopTimer()` into a `finally` block to eradicate latency record survivorship-bias (where only successful saves were timed).
+**Consequences**: This guarantees worker partitions never freeze due to app-level poison pills. Failed events are safely quarantined in the DLT for future reprocessing, enforcing the "Zero Data Loss" architecture while keeping the pipeline flowing.

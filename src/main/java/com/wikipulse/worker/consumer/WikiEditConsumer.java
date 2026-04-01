@@ -3,82 +3,59 @@ package com.wikipulse.worker.consumer;
 import com.wikipulse.producer.model.WikiEditEvent;
 import com.wikipulse.worker.metrics.WorkerMetrics;
 import com.wikipulse.worker.service.AnalyticsService;
-import io.micrometer.core.instrument.Timer;
 import com.wikipulse.worker.service.DeduplicationService;
 import com.wikipulse.worker.service.ProcessedEditService;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
-import org.springframework.kafka.support.KafkaHeaders;
-import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Service;
 
 @Service
 public class WikiEditConsumer {
 
-  private static final Logger log = LoggerFactory.getLogger(WikiEditConsumer.class);
+    private static final Logger log = LoggerFactory.getLogger(WikiEditConsumer.class);
 
-  private final DeduplicationService deduplicationService;
-  private final ProcessedEditService processedEditService;
-  private final AnalyticsService analyticsService;
-  private final WorkerMetrics workerMetrics;
+    private final DeduplicationService deduplicationService;
+    private final AnalyticsService analyticsService;
+    private final ProcessedEditService processedEditService;
+    private final WorkerMetrics workerMetrics;
 
-  public WikiEditConsumer(
-      DeduplicationService deduplicationService,
-      ProcessedEditService processedEditService,
-      AnalyticsService analyticsService,
-      WorkerMetrics workerMetrics) {
-    this.deduplicationService = deduplicationService;
-    this.processedEditService = processedEditService;
-    this.analyticsService = analyticsService;
-    this.workerMetrics = workerMetrics;
-  }
-
-  @KafkaListener(topics = "wiki-edits", groupId = "wikipulse-worker-group")
-  public void consumeEdit(
-      WikiEditEvent event,
-      @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
-      Acknowledgment acknowledgment) {
-    Timer.Sample sample = workerMetrics.startTimer();
-    try {
-      if (event != null) {
-        // Step A: Redis Idempotency Check
-        if (deduplicationService.isDuplicate(event.id())) {
-          log.warn("[Duplicate Detected] Skipping edit {}", event.id());
-          workerMetrics.stopTimer(sample);
-          acknowledgment.acknowledge();
-          return;
-        }
-
-        log.info(
-            "[Partition-{}] Received Edit: '{}' by '{}'", partition, event.title(), event.user());
-
-        // Step B: Analytics Enrichment
-        int complexity = analyticsService.calculateComplexity(event);
-        boolean isBot = analyticsService.detectBot(event.user());
-
-        if (isBot) {
-          log.warn(
-              "[Partition-{}] Bot Detected: User '{}', Score: {}",
-              partition,
-              event.user(),
-              complexity);
-          workerMetrics.incrementBotsDetected();
-        }
-
-        // Step C: Database Save with enriched values
-        processedEditService.saveEdit(event, isBot, complexity);
-        workerMetrics.incrementProcessed();
-      }
-
-      workerMetrics.stopTimer(sample);
-      // Step C: Offset Commit
-      // Explicit manual acknowledgment ONLY after DB save succeeds
-      acknowledgment.acknowledge();
-    } catch (Exception e) {
-      log.error("[Partition-{}] Error processing event: {}", partition, e.getMessage());
-      // Not acknowledging ensures message is handled according to retry tracking
+    public WikiEditConsumer(DeduplicationService deduplicationService,
+                            AnalyticsService analyticsService,
+                            ProcessedEditService processedEditService,
+                            WorkerMetrics workerMetrics) {
+        this.deduplicationService = deduplicationService;
+        this.analyticsService = analyticsService;
+        this.processedEditService = processedEditService;
+        this.workerMetrics = workerMetrics;
     }
-  }
+
+    @KafkaListener(topics = "wiki-edits", groupId = "wikipulse-worker-group")
+    public void consume(WikiEditEvent event, Acknowledgment acknowledgment) {
+        Timer.Sample sample = workerMetrics.startTimer();
+        
+        try {
+            boolean isNew = deduplicationService.isNewEdit(event);
+            if (!isNew) {
+                log.debug("Duplicate event ignored: {}", event.id());
+                acknowledgment.acknowledge();
+                return;
+            }
+
+            analyticsService.processAnalytics(event);
+            processedEditService.save(event);
+
+            workerMetrics.incrementProcessed();
+            acknowledgment.acknowledge();
+
+        } catch (Exception e) {
+            log.error("[CRITICAL ERROR] Failed to process WikiEditEvent ID: {}", event.id(), e);
+            workerMetrics.incrementError();
+            throw e; // Rethrow to trigger the ErrorHandler (Retry & DLT)
+        } finally {
+            workerMetrics.stopTimer(sample); // Assures no survivorship bias in latency monitoring
+        }
+    }
 }
