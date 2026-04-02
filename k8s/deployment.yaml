@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wikipulse-worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: wikipulse-worker
+  template:
+    metadata:
+      labels:
+        app: wikipulse-worker
+    spec:
+      containers:
+        - name: ingestor
+          image: wikipulse-ingestor:latest
+          imagePullPolicy: Never
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          envFrom:
+            - configMapRef:
+                name: wikipulse-config
+            - secretRef:
+                name: wikipulse-secret

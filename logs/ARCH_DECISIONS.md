@@ -425,3 +425,11 @@ Phase 2 mandates integrating observability to track internal metrics. We must mo
 **Context**: Fat JARs running under default Docker base images bloat to over 500MB, expanding the CVE attack surface and slowing orchestration pull times. Additionally, running containers as `root` violates modern Kubernetes pod security standards.
 **Decision**: We transitioned to a two-stage Alpine-based Dockerfile. The build phase caches Maven layers aggressively (`dependency:go-offline`). The runtime phase uses a stripped `jre-alpine` image and strictly enforces a non-root `wikipulse` user. We leverage array-form entrypoints to guarantee signal propagation (`SIGTERM`) and set `JAVA_OPTS` to optimize for container heuristics and JEP 444 virtual thread parallelism.
 **Consequences**: The application container footprint shrinks drastically (target < 200MB). Container escape vulnerabilities are inherently mitigated by the minimal Alpine surface and dropped root capabilities. The JVM gracefully scales heuristics to available container limits, fortifying our Phase 3 Kubernetes transition.
+
+---
+
+## ADR-020: Kubernetes Orchestration & Target Scaling
+**Date**: 2026-04-02
+**Context**: Local Docker Compose artificially restricts horizontal scaling parameters due to its monolithic engine design. To ingest Wikipedia streams robustly during surge loads without partition idling or bottlenecking, the active application pods must trace the layout of the deployed broker strategy autonomously.
+**Decision**: We transitioned into a declarative Kubernetes `Deployment` topology mandating precisely 3 replicas (`replicas: 3`). This yields a 1-to-1 processing ratio aligned flawlessly across our 3-partition `wiki-edits` cluster. Resource bounds and strict memory tracking were instantiated to maintain precise scheduler hygiene. Liveness and Readiness native actuator probes establish rolling update immunity.
+**Consequences**: Throughput scalability is totally maximized without spawning idle consumers. Zero-downtime rolling distributions are strictly buffered because the readiness probes independently ensure downstream stability before authorizing network load-balancing. Liveness probes concurrently resolve container freeze occurrences programmatically by restarting unresponsive Virtual Threads natively.
