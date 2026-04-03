@@ -1,0 +1,23 @@
+{
+  "title": "WikiPulse Executive Dashboard",
+  "panels": [
+    {
+      "title": "Real-time Throughput (EPS)",
+      "type": "timeseries",
+      "targets": [{"expr": "sum(rate(wikipulse_edits_processed_total[1m]))"}],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "title": "Human vs Bot Distribution",
+      "type": "gauge",
+      "targets": [{"expr": "sum(wikipulse_edits_processed_total) by (is_bot)"}],
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+    },
+    {
+      "title": "Per-partition Consumer Lag",
+      "type": "heatmap",
+      "targets": [{"expr": "kafka_consumer_fetch_manager_records_lag"}],
+      "gridPos": {"h": 8, "w": 18, "x": 0, "y": 8}
+    }
+  ]
+}

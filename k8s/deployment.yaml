@@ -2,6 +2,13 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: wikipulse-worker
+  annotations:
+    # ADR-020: Base Kubernetes orchestration topology (3 replicas, 1-per-partition baseline).
+    # ADR-022: HPA (k8s/hpa.yaml) owns replica count at runtime (range: 1–6).
+    #          The static `replicas: 3` below acts as a safe fallback only if HPA is removed.
+    #          During normal operation, the HPA controller overrides this value.
+    scaling.policy: "hpa-managed"
+    scaling.adr: "ADR-022"
 spec:
   replicas: 3
   selector:
@@ -12,6 +19,11 @@ spec:
       labels:
         app: wikipulse-worker
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: ingestor
           image: wikipulse-ingestor:latest

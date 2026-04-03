@@ -433,3 +433,23 @@ Phase 2 mandates integrating observability to track internal metrics. We must mo
 **Context**: Local Docker Compose artificially restricts horizontal scaling parameters due to its monolithic engine design. To ingest Wikipedia streams robustly during surge loads without partition idling or bottlenecking, the active application pods must trace the layout of the deployed broker strategy autonomously.
 **Decision**: We transitioned into a declarative Kubernetes `Deployment` topology mandating precisely 3 replicas (`replicas: 3`). This yields a 1-to-1 processing ratio aligned flawlessly across our 3-partition `wiki-edits` cluster. Resource bounds and strict memory tracking were instantiated to maintain precise scheduler hygiene. Liveness and Readiness native actuator probes establish rolling update immunity.
 **Consequences**: Throughput scalability is totally maximized without spawning idle consumers. Zero-downtime rolling distributions are strictly buffered because the readiness probes independently ensure downstream stability before authorizing network load-balancing. Liveness probes concurrently resolve container freeze occurrences programmatically by restarting unresponsive Virtual Threads natively.
+
+---
+
+## ADR-021: Live Observability & Telemetry Topography
+**Date**: 2026-04-02
+**Context**: We need real-time visualization over system behavior without deploying heavyweight commercial APM agents. The Phase 2 instrumentation generated native Prometheus endpoints, but we lack an Executive UI and alerting structure to measure Pulse operations cleanly.
+**Decision**: We established a self-hosted `prometheus` and `grafana` observability stack deployed identically onto the internal Kubernetes perimeter. We programmed strict Alerting Thresholds configured at Consumer Lag > 5000 units and p99 Processing Latency > 100ms. Throughput visualizations operate on native `1m` moving-average rates `sum(rate(wikipulse_edits_processed_total[1m]))`. 
+**Consequences**: We possess complete, real-time control metrics distinguishing explicitly across partition instances via Kubernetes Service mapping. Operations can react seamlessly before consumer starvation impacts business logic. End-to-end transparency is accomplished matching tier-1 modern SRE patterns.
+
+---
+
+## ADR-022: Dynamic Scaling Strategy
+**Date**: 2026-04-02
+**Context**: To adapt to the real-time intensity of the Wikipedia stream, the WikiPulse worker fleet must transition from static replicas to an elastic cloud-native engine. We must scale autonomously based on load without risking data loss, over-provisioning, or violating non-root security.
+**Decision**: 
+1. **Horizontal Pod Autoscaling (HPA)** is enabled targeting the `wikipulse-worker` deployment.
+2. **Replica Range Logic (1-6)**: Minimum 1 guarantees all 3 partitions are covered by consumer group rebalancing during idle periods. Maximum 6 avoids partition starvation, scaling to up to 2 pods per partition (3 active, 3 hot-standby).
+3. **Metric Trigger**: Target 70% CPU Utilization. Since Virtual Threads excel at I/O-bound concurrency, CPU is a highly reliable proxy indicating saturation from high-intensity JSON parsing and analytics routines. 70% allows safe overhead limits avoiding sudden JVM crashing.
+4. **Cooldown Period**: A 5-minute (300s) default scale-down stabilization window is strictly retained to prevent "thrashing" triggered by erratic Wikipedia stream bursts.
+**Consequences**: The architecture enforces an elastic resiliency model. Under sudden load, pods expand up to our maximum 6 threshold preventing stream backpressure. During inactivity, the system gracefully reduces to 1 pod effectively covering all partitions sequentially without incurring redundant K8s resource costs.

@@ -37,15 +37,20 @@ public class WikiEditConsumer {
         Timer.Sample sample = workerMetrics.startTimer();
         
         try {
-            boolean isNew = deduplicationService.isNewEdit(event);
-            if (!isNew) {
+            boolean isDuplicate = deduplicationService.isDuplicate(event.id());
+            if (isDuplicate) {
                 log.debug("Duplicate event ignored: {}", event.id());
                 acknowledgment.acknowledge();
                 return;
             }
 
-            analyticsService.processAnalytics(event);
-            processedEditService.save(event);
+            int complexity = analyticsService.calculateComplexity(event);
+            boolean isBot = analyticsService.detectBot(event.user());
+            if (isBot) {
+                workerMetrics.incrementBots();
+            }
+
+            processedEditService.saveEdit(event, isBot, complexity);
 
             workerMetrics.incrementProcessed();
             acknowledgment.acknowledge();
@@ -53,7 +58,7 @@ public class WikiEditConsumer {
         } catch (Exception e) {
             log.error("[CRITICAL ERROR] Failed to process WikiEditEvent ID: {}", event.id(), e);
             workerMetrics.incrementError();
-            throw e; // Rethrow to trigger the ErrorHandler (Retry & DLT)
+            throw new RuntimeException("Consumer processing failed", e); // Wrap to satisfy compiler and trigger DLT
         } finally {
             workerMetrics.stopTimer(sample); // Assures no survivorship bias in latency monitoring
         }

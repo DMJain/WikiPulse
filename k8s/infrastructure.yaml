@@ -1,0 +1,354 @@
+# =============================================================================
+# WikiPulse — Kubernetes Dependency Stack
+# File       : k8s/infrastructure.yaml
+# Purpose    : Runs the three stateful dependencies that wikipulse-worker
+#              expects — PostgreSQL, Redis, and Kafka (with ZooKeeper).
+#
+# Credentials MUST match:
+#   k8s/configmap.yaml  → SPRING_DATASOURCE_URL, SPRING_REDIS_HOST
+#   k8s/secret.yaml     → POSTGRES_PASSWORD
+#
+# Deploy:
+#   kubectl apply -f k8s/infrastructure.yaml
+#
+# Verify:
+#   kubectl get pods -l tier=infrastructure
+# =============================================================================
+
+# ──────────────────────────────────────────────────────────────────────────────
+# POSTGRESQL
+# DB   : wikipulsedb
+# User : wikipulse
+# Pass : wikipulse_password  (matched to k8s/secret.yaml → POSTGRES_PASSWORD)
+# Host : postgres            (K8s DNS: <service-name>.<namespace>.svc.cluster.local)
+# Port : 5432
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+    tier: infrastructure
+  annotations:
+    description: "Primary relational store for WikiPulse analytics persistence."
+    resolves: "UnknownHostException — postgres host not found in cluster DNS"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        tier: infrastructure
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            # Credentials MUST match configmap.yaml SPRING_DATASOURCE_URL
+            # and secret.yaml POSTGRES_PASSWORD.
+            - name: POSTGRES_USER
+              value: "wikipulse"
+            - name: POSTGRES_PASSWORD
+              value: "wikipulse_password"
+            - name: POSTGRES_DB
+              value: "wikipulsedb"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - wikipulse
+                - -d
+                - wikipulsedb
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - wikipulse
+                - -d
+                - wikipulsedb
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: pgdata
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+    tier: infrastructure
+  annotations:
+    description: "ClusterIP service — resolves 'postgres' hostname in cluster DNS."
+spec:
+  type: ClusterIP
+  # This DNS name ('postgres') MUST match the hostname in
+  # configmap.yaml → SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/wikipulsedb
+  selector:
+    app: postgres
+  ports:
+    - name: postgresql
+      protocol: TCP
+      port: 5432
+      targetPort: 5432
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# REDIS
+# Host : redis  (K8s DNS matches configmap.yaml SPRING_REDIS_HOST: 'redis')
+# Port : 6379
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+    tier: infrastructure
+  annotations:
+    description: "Distributed deduplication store (ADR-012). TTL=24h per edit key."
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        tier: infrastructure
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.2-alpine
+          ports:
+            - containerPort: 6379
+          # Disable AOF for minikube dev (no persistent volume needed).
+          command: ["redis-server", "--save", "", "--appendonly", "no"]
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app: redis
+    tier: infrastructure
+  annotations:
+    description: "ClusterIP service — resolves 'redis' hostname in cluster DNS."
+spec:
+  type: ClusterIP
+  # This DNS name ('redis') MUST match:
+  # configmap.yaml → SPRING_REDIS_HOST: 'redis'
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      protocol: TCP
+      port: 6379
+      targetPort: 6379
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# ZOOKEEPER  (required by Kafka before KRaft migration)
+# Port : 2181 (internal only)
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zookeeper
+  labels:
+    app: zookeeper
+    tier: infrastructure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+        tier: infrastructure
+    spec:
+      containers:
+        - name: zookeeper
+          image: confluentinc/cp-zookeeper:7.5.0
+          ports:
+            - containerPort: 2181
+          env:
+            - name: ZOOKEEPER_CLIENT_PORT
+              value: "2181"
+            - name: ZOOKEEPER_TICK_TIME
+              value: "2000"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "300m"
+          readinessProbe:
+            exec:
+              command:
+                - bash
+                - -c
+                - "echo ruok | nc localhost 2181 | grep imok"
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 6
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+  labels:
+    app: zookeeper
+    tier: infrastructure
+spec:
+  type: ClusterIP
+  selector:
+    app: zookeeper
+  ports:
+    - name: client
+      protocol: TCP
+      port: 2181
+      targetPort: 2181
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# KAFKA  (Single-Node — dev/minikube profile)
+# Internal listener : kafka:29092    ← matches configmap.yaml KAFKA_BOOTSTRAP_SERVERS
+# External listener : localhost:9092  ← for local kafkacat / debugging
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  labels:
+    app: kafka
+    tier: infrastructure
+  annotations:
+    description: "Single-node Confluent Kafka broker. Production upgrade path: Strimzi operator."
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+        tier: infrastructure
+    spec:
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:7.5.0
+          ports:
+            - containerPort: 29092
+              name: internal
+            - containerPort: 9092
+              name: external
+          env:
+            - name: KAFKA_BROKER_ID
+              value: "1"
+            - name: KAFKA_ZOOKEEPER_CONNECT
+              value: "zookeeper:2181"
+            # PLAINTEXT = internal pod-to-pod traffic on port 29092
+            # PLAINTEXT_HOST = external NodePort traffic on port 9092
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              # 'kafka:29092' MUST match configmap.yaml KAFKA_BOOTSTRAP_SERVERS.
+              value: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            # Auto-create the wiki-edits topic with 3 partitions on broker start.
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"
+            - name: KAFKA_NUM_PARTITIONS
+              value: "3"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          readinessProbe:
+            exec:
+              command:
+                - bash
+                - -c
+                - "kafka-topics --bootstrap-server localhost:9092 --list"
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 8
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  labels:
+    app: kafka
+    tier: infrastructure
+  annotations:
+    description: "ClusterIP service — resolves 'kafka' hostname in cluster DNS."
+spec:
+  type: ClusterIP
+  # DNS name 'kafka' MUST match configmap.yaml → KAFKA_BOOTSTRAP_SERVERS: 'kafka:29092'
+  selector:
+    app: kafka
+  ports:
+    - name: internal
+      protocol: TCP
+      port: 29092
+      targetPort: 29092
+    - name: external
+      protocol: TCP
+      port: 9092
+      targetPort: 9092

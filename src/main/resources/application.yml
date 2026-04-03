@@ -43,7 +43,7 @@ spring:
     listener:
       ack-mode: manual-immediate
 server:
-  port: 0
+  port: 8080
 
 management:
   endpoints:

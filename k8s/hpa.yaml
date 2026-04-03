@@ -1,0 +1,87 @@
+# =============================================================================
+# WikiPulse — Horizontal Pod Autoscaler
+# ADR-022: Dynamic Scaling Strategy
+# =============================================================================
+#
+# Target:    wikipulse-worker Deployment
+# Range:     minReplicas=1  (all 3 partitions serviced via consumer group
+#                            rebalancing — ADR-007, ADR-011)
+#            maxReplicas=6  (3 active consumers + 3 hot-standby for instant
+#                            failover without cold-start penalty — ADR-022)
+#
+# Metric:    CPU Utilization @ 70% of requests.cpu (500m → trigger at 350m)
+#            Virtual Threads (ADR-002) only consume CPU during genuine compute
+#            (JSON deserialization, analytics scoring), making CPU a leading
+#            indicator of processing saturation — not a lagging one.
+#
+# Behavior:  "Fast to help, slow to leave"
+#   Scale-up:   Stabilization 60s  / max +2 pods per 60s  (absorbs SSE bursts)
+#   Scale-down: Stabilization 300s / max -1 pod  per 60s  (anti-thrash window)
+#               The 300s window guards against transient Wikipedia edit storms
+#               that produce a lull followed immediately by a retry surge.
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: wikipulse-worker-hpa
+  annotations:
+    # ADR cross-references for GitOps traceability
+    adr.scaling: "ADR-022"
+    adr.partitions: "ADR-007"
+    adr.consumer-group: "ADR-011"
+    adr.virtual-threads: "ADR-002"
+spec:
+  # ── Scale Target ─────────────────────────────────────────────────────────────
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: wikipulse-worker
+
+  # ── Replica Bounds ───────────────────────────────────────────────────────────
+  # min=1: A single pod handles all 3 partitions during off-peak hours,
+  #         saving ~1 vCPU and ~1 GiB RAM vs. the 3-pod baseline.
+  # max=6: 3 partitions × 2 = 6 upper bound.
+  #         Pods 4–6 are hot-standby consumers (0 partitions assigned by Kafka)
+  #         but absorb partition reassignments instantly on active-pod failure.
+  minReplicas: 1
+  maxReplicas: 6
+
+  # ── Scaling Metrics ──────────────────────────────────────────────────────────
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # 70% of requests.cpu (500m) = 350 milliCPU trigger threshold.
+          # 30% headroom absorbs the 15s HPA control-loop latency and the
+          # 60s scale-up stabilization window without JVM saturation.
+          averageUtilization: 70
+
+  # ── Scaling Behavior (Asymmetric) ────────────────────────────────────────────
+  behavior:
+    # Scale-DOWN: Conservative — prevents capacity collapse after a burst.
+    # The 300s (5-minute) stabilization window matches the Redis 60s bot-
+    # detection TTL cycle and guards against retry storms following a lull.
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1           # Remove at most 1 pod per period
+          periodSeconds: 60
+      selectPolicy: Min      # Always choose the most conservative policy
+
+    # Scale-UP: Aggressive — Wikipedia traffic surges are fast and bursty.
+    # +2 pods per 60s ensures we reach 6 replicas in ~90s from baseline (3).
+    # The 60s stabilization prevents micro-oscillation on momentary spikes.
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2           # Add at most 2 pods per period
+          periodSeconds: 60
+        - type: Percent
+          value: 100         # Or double current replicas — whichever is larger
+          periodSeconds: 60
+      selectPolicy: Max      # Always choose the most aggressive scale-up policy
