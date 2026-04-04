@@ -32,11 +32,20 @@ public class WikiEditConsumer {
         this.workerMetrics = workerMetrics;
     }
 
-    @KafkaListener(topics = "wiki-edits", groupId = "wikipulse-worker-group")
+    @KafkaListener(
+            topics = "wiki-edits",
+            groupId = "wikipulse-worker-group",
+            containerFactory = "kafkaListenerContainerFactory")
     public void consume(WikiEditEvent event, Acknowledgment acknowledgment) {
         Timer.Sample sample = workerMetrics.startTimer();
-        
+
         try {
+            if (event == null || event.id() == null || event.id() <= 0) {
+                log.warn("Skipping malformed event payload (null or invalid id). Acknowledging offset.");
+                acknowledgment.acknowledge();
+                return;
+            }
+
             boolean isDuplicate = deduplicationService.isDuplicate(event.id());
             if (isDuplicate) {
                 log.debug("Duplicate event ignored: {}", event.id());

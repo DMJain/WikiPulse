@@ -1,4 +1,4 @@
-package com.wikipulse.worker.entity;
+package com.wikipulse.worker.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -27,11 +27,20 @@ public class ProcessedEdit implements Persistable<Long> {
   @Column(name = "page_title", nullable = false, length = 1000)
   private String pageTitle;
 
+  @Column(name = "event_type", length = 64)
+  private String eventType;
+
   @Column(name = "edit_comment", columnDefinition = "TEXT")
   private String editComment;
 
   @Column(name = "edit_timestamp", nullable = false)
   private Instant editTimestamp;
+
+  @Column(name = "is_bot")
+  private Boolean isBot;
+
+  @Column(name = "complexity_score")
+  private Integer complexityScore;
 
   public ProcessedEdit() {}
 
@@ -59,6 +68,14 @@ public class ProcessedEdit implements Persistable<Long> {
     this.pageTitle = pageTitle;
   }
 
+  public String getEventType() {
+    return eventType;
+  }
+
+  public void setEventType(String eventType) {
+    this.eventType = eventType;
+  }
+
   public String getEditComment() {
     return editComment;
   }
@@ -74,12 +91,6 @@ public class ProcessedEdit implements Persistable<Long> {
   public void setEditTimestamp(Instant editTimestamp) {
     this.editTimestamp = editTimestamp;
   }
-
-  @Column(name = "is_bot")
-  private Boolean isBot;
-
-  @Column(name = "complexity_score")
-  private Integer complexityScore;
 
   public Boolean getIsBot() {
     return isBot;

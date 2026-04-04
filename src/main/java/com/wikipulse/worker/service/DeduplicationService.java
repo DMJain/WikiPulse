@@ -7,6 +7,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class DeduplicationService {
 
+  private static final String DEDUP_KEY_PREFIX = "edit:processed:";
+  private static final Duration DEDUP_TTL = Duration.ofHours(24);
+
   private final RedisTemplate<String, String> redisTemplate;
 
   public DeduplicationService(RedisTemplate<String, String> redisTemplate) {
@@ -14,13 +17,13 @@ public class DeduplicationService {
   }
 
   public boolean isDuplicate(Long editId) {
-    if (editId == null) {
-      return false;
+    if (editId == null || editId <= 0) {
+      return true;
     }
     Boolean setIfAbsentRes =
         redisTemplate
             .opsForValue()
-            .setIfAbsent("edit:processed:" + editId, "true", Duration.ofHours(24));
+            .setIfAbsent(DEDUP_KEY_PREFIX + editId, "true", DEDUP_TTL);
     return !Boolean.TRUE.equals(setIfAbsentRes);
   }
 }

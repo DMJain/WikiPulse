@@ -8,6 +8,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class AnalyticsService {
 
+  private static final int BOT_VELOCITY_THRESHOLD = 5;
+  private static final Duration BOT_VELOCITY_WINDOW = Duration.ofSeconds(60);
+
   private final StringRedisTemplate redisTemplate;
 
   public AnalyticsService(StringRedisTemplate redisTemplate) {
@@ -42,9 +45,9 @@ public class AnalyticsService {
 
     // Set TTL only on the first increment to ensure a rolling 60s window from the first edit
     if (count != null && count == 1L) {
-      redisTemplate.expire(key, Duration.ofSeconds(60));
+      redisTemplate.expire(key, BOT_VELOCITY_WINDOW);
     }
 
-    return count != null && count > 5;
+    return count != null && count > BOT_VELOCITY_THRESHOLD;
   }
 }

@@ -621,3 +621,63 @@ and protect JVM memory during burst traffic using bounded backpressure.
   is preferred over process instability.
 - Async callbacks require careful logging discipline to avoid noisy logs at
   peak event rates.
+
+---
+
+## ADR-026: Consumer Pipeline and Write-Ahead Offset Logic
+
+**Date**: 2026-04-05
+**Status**: Accepted
+
+### Context
+Phase 4 Task 4 requires a stateful worker pipeline that consumes `wiki-edits`,
+deduplicates globally, enriches events with analytics, persists results, and
+only then acknowledges Kafka offsets. The pipeline must tolerate poison pills,
+duplicate deliveries, and JVM crashes without silent data loss.
+
+### Decision
+1. Standardize consumer execution order to:
+  **Read (Kafka) -> Deduplicate (Redis SETNX 24h) -> Analyze (complexity +
+  bot velocity) -> Save (PostgreSQL) -> ACK (Kafka MANUAL_IMMEDIATE)**.
+2. Use `ErrorHandlingDeserializer` to isolate deserialization failures from
+  partition progress and route irrecoverable failures through error handling.
+3. Keep offset commits manual and immediate so acknowledgments happen only
+  after successful processing and persistence.
+4. Preserve Wikipedia event `id` as the PostgreSQL primary key to provide a
+  hard idempotency boundary even if Redis state is unavailable or expired.
+
+### Execution Flow Contract
+1. **Read**: Worker receives `WikiEditEvent` from `wiki-edits` under
+  `wikipulse-worker-group`.
+2. **Deduplicate**: `SETNX edit:processed:<id> true EX 24h`.
+  - If key already exists: event is duplicate and can be acknowledged safely.
+  - If key is new: continue processing.
+3. **Analyze**:
+  - Complexity score computed from event content.
+  - Bot velocity tracked with `INCR bot:velocity:<user>` and 60-second TTL.
+4. **Save**: Persist `ProcessedEdit` to PostgreSQL using event `id` as `@Id`.
+5. **ACK**: Call `Acknowledgment.acknowledge()` only after successful save.
+
+### Crash and Recovery Semantics
+- **Crash before Redis SETNX**: Kafka redelivers; no state mutation occurred.
+- **Crash after SETNX but before Save**: Kafka redelivers; Redis marks seen,
+  so duplicate short-circuits safely (no double-write).
+- **Crash after Save but before ACK**: Kafka redelivers; either Redis key or
+  DB primary key prevents duplicate persistence. ACK then advances offset.
+- **Crash after ACK**: Processing already completed and offset committed; no
+  replay required.
+
+This ordering treats Kafka as a write-ahead log and guarantees at-least-once
+delivery with idempotent side effects.
+
+### Rationale
+- Aligns with ADR-011 (`ErrorHandlingDeserializer`, manual acknowledgment).
+- Implements ADR-012 distributed deduplication via Redis SETNX + 24h TTL.
+- Enforces ADR-013 save-before-ack write-ahead safety model.
+- Preserves ADR-014 stateful analytics (velocity window via Redis INCR).
+
+### Trade-offs
+- Manual acknowledgment increases code path complexity versus auto-commit.
+- Redis TTL-based dedup is probabilistic beyond 24 hours by design.
+- Save-before-ack can increase replay frequency during hard crashes, but replay
+  is safe due to dedup + primary-key constraints.

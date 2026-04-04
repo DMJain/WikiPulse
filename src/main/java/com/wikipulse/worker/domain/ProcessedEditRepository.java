@@ -1,6 +1,5 @@
-package com.wikipulse.worker.repository;
+package com.wikipulse.worker.domain;
 
-import com.wikipulse.worker.entity.ProcessedEdit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

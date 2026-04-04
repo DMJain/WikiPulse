@@ -1,8 +1,8 @@
 package com.wikipulse.worker.service;
 
 import com.wikipulse.producer.domain.WikiEditEvent;
-import com.wikipulse.worker.entity.ProcessedEdit;
-import com.wikipulse.worker.repository.ProcessedEditRepository;
+import com.wikipulse.worker.domain.ProcessedEdit;
+import com.wikipulse.worker.domain.ProcessedEditRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -26,6 +26,7 @@ public class ProcessedEditService {
     entity.setId(event.id());
     entity.setUserName(event.user());
     entity.setPageTitle(event.title());
+    entity.setEventType(event.type());
     entity.setEditComment(event.comment());
     entity.setEditTimestamp(event.timestamp());
 
