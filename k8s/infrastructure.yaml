@@ -219,6 +219,16 @@ spec:
               value: "2181"
             - name: ZOOKEEPER_TICK_TIME
               value: "2000"
+            # FIX (SRE-001): cp-zookeeper:7.5.0 ships ZooKeeper 3.5+ which disables
+            # all Four Letter Word (4LW) commands by default as a security hardening
+            # measure. The readinessProbe sends 'ruok' via netcat. Without this
+            # whitelist property, ZooKeeper silently drops the command → nc returns
+            # empty string → grep imok exits 1 → pod stays NotReady forever,
+            # blocking the entire Kafka → worker dependency chain.
+            # KAFKA_OPTS is the correct env var for cp-* Confluent images;
+            # the entrypoint script injects it into the JVM launch command.
+            - name: KAFKA_OPTS
+              value: "-Dzookeeper.4lw.commands.whitelist=ruok"
           resources:
             requests:
               memory: "256Mi"
@@ -231,8 +241,12 @@ spec:
               command:
                 - bash
                 - -c
-                - "echo ruok | nc localhost 2181 | grep imok"
-            initialDelaySeconds: 15
+                # -w 1: 1-second nc timeout → fail-fast if ZK is unresponsive.
+                # grep imok: semantic check — port open is not enough; ZK must
+                # be actively acknowledging the ruok 4LW command.
+                - "echo ruok | nc -w 1 localhost 2181 | grep imok"
+            # 20s: JVM cold-start (~8s) + ZooKeeper leader election (~5s) + margin.
+            initialDelaySeconds: 20
             periodSeconds: 10
             failureThreshold: 6
 ---
@@ -270,6 +284,8 @@ metadata:
     description: "Single-node Confluent Kafka broker. Production upgrade path: Strimzi operator."
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: kafka
@@ -279,6 +295,7 @@ spec:
         app: kafka
         tier: infrastructure
     spec:
+      enableServiceLinks: false
       containers:
         - name: kafka
           image: confluentinc/cp-kafka:7.5.0
@@ -312,6 +329,11 @@ spec:
               value: "true"
             - name: KAFKA_NUM_PARTITIONS
               value: "3"
+            # Add these to the 'env' list for the kafka container in k8s/infrastructure.yaml:
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
           resources:
             requests:
               memory: "512Mi"
@@ -327,6 +349,7 @@ spec:
                 - "kafka-topics --bootstrap-server localhost:9092 --list"
             initialDelaySeconds: 30
             periodSeconds: 15
+            timeoutSeconds: 10
             failureThreshold: 8
 ---
 apiVersion: v1
@@ -340,6 +363,7 @@ metadata:
     description: "ClusterIP service — resolves 'kafka' hostname in cluster DNS."
 spec:
   type: ClusterIP
+  publishNotReadyAddresses: true
   # DNS name 'kafka' MUST match configmap.yaml → KAFKA_BOOTSTRAP_SERVERS: 'kafka:29092'
   selector:
     app: kafka
