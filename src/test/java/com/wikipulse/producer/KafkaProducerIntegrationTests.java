@@ -2,7 +2,7 @@ package com.wikipulse.producer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.wikipulse.producer.model.WikiEditEvent;
+import com.wikipulse.producer.domain.WikiEditEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
@@ -34,7 +34,7 @@ class KafkaProducerIntegrationTests {
   static final KafkaContainer kafka =
       new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.5.0"));
 
-  @Autowired private KafkaTemplate<String, Object> kafkaTemplate;
+  @Autowired private KafkaTemplate<String, WikiEditEvent> kafkaTemplate;
 
   private static Consumer<String, String> consumer;
 
@@ -65,19 +65,27 @@ class KafkaProducerIntegrationTests {
     WikiEditEvent event =
         new WikiEditEvent(
             12345L,
-            "TestDataBot",
             "Main_Page",
+            "TestDataBot",
+            Instant.parse("2026-03-19T10:00:00Z"),
+            "edit",
+            false,
             "Fixed typo in test data",
-            Instant.parse("2026-03-19T10:00:00Z"));
+            new WikiEditEvent.Meta(
+                "en.wikipedia.org",
+                "recentchange",
+                "https://en.wikipedia.org/wiki/Main_Page",
+                Instant.parse("2026-03-19T10:00:00Z")));
 
-    kafkaTemplate.send("wiki-edits", String.valueOf(event.id()), event);
+    kafkaTemplate.send("wiki-edits", event.title(), event);
 
     ConsumerRecord<String, String> receivedRecord =
         KafkaTestUtils.getSingleRecord(consumer, "wiki-edits", Duration.ofSeconds(10));
 
-    assertThat(receivedRecord.key()).isEqualTo("12345");
+    assertThat(receivedRecord.key()).isEqualTo("Main_Page");
     assertThat(receivedRecord.value()).contains("TestDataBot");
     assertThat(receivedRecord.value()).contains("Main_Page");
     assertThat(receivedRecord.value()).contains("2026-03-19T10:00:00Z");
+    assertThat(receivedRecord.value()).contains("\"type\":\"edit\"");
   }
 }

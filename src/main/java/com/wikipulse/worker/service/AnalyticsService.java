@@ -1,6 +1,6 @@
 package com.wikipulse.worker.service;
 
-import com.wikipulse.producer.model.WikiEditEvent;
+import com.wikipulse.producer.domain.WikiEditEvent;
 import java.time.Duration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;

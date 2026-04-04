@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wikipulse-worker
+  labels:
+    app: wikipulse-worker
+  annotations:
+    smoke.protocol: "ADR-024"
+    smoke.mode: "phase4-task2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wikipulse-worker
+  template:
+    metadata:
+      labels:
+        app: wikipulse-worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: wikipulse-worker
+          image: wikipulse-worker:phase4-task2
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: WIKIPULSE_SMOKE_TEST_ENABLED
+              value: "true"
+          envFrom:
+            - configMapRef:
+                name: wikipulse-config
+            - secretRef:
+                name: wikipulse-secret
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10

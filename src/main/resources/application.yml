@@ -1,13 +1,14 @@
 spring:
   application:
-    name: wikipulse-ingestor
+    name: wikipulse-worker
   threads:
     virtual:
       enabled: true
   datasource:
-    url: jdbc:postgresql://localhost:5432/wikipulsedb
-    username: wikipulse
-    password: wikipulse_password
+    # K8s ConfigMap/Secret bridge: postgres:5432, db=wikipulsedb, user=wikipulse
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/wikipulsedb}
+    username: ${SPRING_DATASOURCE_USERNAME:wikipulse}
+    password: ${SPRING_DATASOURCE_PASSWORD:${POSTGRES_PASSWORD:wikipulse_password}}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -17,10 +18,11 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
   data:
     redis:
-      host: localhost
-      port: 6379
+      # K8s Redis service mapping: redis:6379 (AOF disabled in infrastructure)
+      host: ${SPRING_DATA_REDIS_HOST:redis}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:29092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -39,7 +41,7 @@ spring:
       properties:
         spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
         spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
-        spring.json.value.default.type: com.wikipulse.producer.model.WikiEditEvent
+        spring.json.value.default.type: com.wikipulse.producer.domain.WikiEditEvent
         spring.json.trusted.packages: "*"
     listener:
       ack-mode: manual-immediate
@@ -58,3 +60,7 @@ management:
     export:
       prometheus:
         enabled: true
+
+wikipulse:
+  smoke-test:
+    enabled: ${WIKIPULSE_SMOKE_TEST_ENABLED:false}

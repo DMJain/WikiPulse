@@ -453,3 +453,171 @@ Phase 2 mandates integrating observability to track internal metrics. We must mo
 3. **Metric Trigger**: Target 70% CPU Utilization. Since Virtual Threads excel at I/O-bound concurrency, CPU is a highly reliable proxy indicating saturation from high-intensity JSON parsing and analytics routines. 70% allows safe overhead limits avoiding sudden JVM crashing.
 4. **Cooldown Period**: A 5-minute (300s) default scale-down stabilization window is strictly retained to prevent "thrashing" triggered by erratic Wikipedia stream bursts.
 **Consequences**: The architecture enforces an elastic resiliency model. Under sudden load, pods expand up to our maximum 6 threshold preventing stream backpressure. During inactivity, the system gracefully reduces to 1 pod effectively covering all partitions sequentially without incurring redundant K8s resource costs.
+
+---
+
+## ADR-023: Worker Bootstrap and Kubernetes Configuration Bridging
+
+**Date**: 2026-04-04  
+**Status**: Accepted
+
+### Context
+Phase 4 Task 1 requires a strict initialization contract for the worker runtime:
+all stateful dependencies must resolve through Kubernetes DNS and service ports.
+The required targets are PostgreSQL (`postgres:5432`, database `wikipulsedb`,
+user `wikipulse`), Redis (`redis:6379`, AOF disabled in infrastructure), and
+Kafka (`kafka:29092`, PLAINTEXT internal listener).
+
+The deployment already injects environment variables from
+`k8s/configmap.yaml` and `k8s/secret.yaml` via `envFrom`, but runtime property
+resolution must be explicitly wired in Spring configuration to prevent
+localhost drift.
+
+### Decision
+1. Keep the Spring Boot worker on the existing baseline: Spring Boot 3.x on
+   Java 17+ (current project baseline remains Spring Boot 3.4.3, Java 21).
+2. Standardize worker bootstrap dependencies as the required core stack:
+   - Spring Web (reactive stack currently provided by `spring-boot-starter-webflux`)
+   - Spring Data JPA
+   - Spring Data Redis
+   - Spring Kafka
+   - Spring Boot Actuator
+   - PostgreSQL JDBC Driver
+3. Enforce environment-first property mapping in `application.yml`:
+   - `SPRING_DATASOURCE_URL` -> fallback `jdbc:postgresql://postgres:5432/wikipulsedb`
+   - `SPRING_DATASOURCE_USERNAME` -> fallback `wikipulse`
+   - `SPRING_DATASOURCE_PASSWORD` -> fallback to `POSTGRES_PASSWORD`
+   - `SPRING_DATA_REDIS_HOST` -> fallback `redis`
+   - `SPRING_DATA_REDIS_PORT` -> fallback `6379`
+   - `KAFKA_BOOTSTRAP_SERVERS` -> fallback `kafka:29092`
+4. Continue using Kubernetes `envFrom` (`ConfigMap` + `Secret`) as the source
+   of truth for runtime configuration injection.
+
+### Rationale
+- Aligns application bootstrapping with the concrete cluster topology rather
+  than machine-local defaults.
+- Uses Spring relaxed binding conventions so injected environment variables map
+  directly to the Spring context with no custom binding layer.
+- Preserves existing worker behavior while making connectivity deterministic in
+  Kubernetes.
+
+### Trade-offs
+- K8s-first defaults are less convenient for local non-container runs unless
+  values are overridden.
+- Password fallback compatibility (`SPRING_DATASOURCE_PASSWORD` then
+  `POSTGRES_PASSWORD`) adds flexibility but introduces dual-key operational
+  support.
+
+---
+
+## ADR-024: In-Cluster Worker Smoke Test Protocol
+
+**Date**: 2026-04-05
+**Status**: Accepted
+
+### Context
+Phase 4 Task 2 requires hard proof that the worker can resolve and connect to
+all stateful in-cluster dependencies using Kubernetes-injected configuration:
+PostgreSQL (`postgres:5432`), Redis (`redis:6379`), and Kafka (`kafka:29092`).
+This proof must execute automatically at pod startup and fail immediately on
+DNS, networking, credentials, or broker metadata errors.
+
+### Decision
+1. Implement a temporary startup smoke check using Spring `ApplicationRunner`
+   so validation runs automatically during application bootstrap.
+2. Execute deterministic checks in sequence:
+   - PostgreSQL: run `SELECT 1` and read connection metadata from the active
+     datasource.
+   - Redis: perform `SETNX` (`setIfAbsent`) on a namespaced key with short TTL,
+     then read the value back and assert round-trip integrity.
+   - Kafka: use `AdminClient` metadata APIs to list topics and assert presence
+     of required topic `wiki-edits`.
+3. Enforce fail-fast startup behavior: any failed assertion throws an
+   application-startup exception (`IllegalStateException`), preventing startup
+   completion and readiness transition.
+4. Emit explicit structured log markers for each dependency check so operators
+   can confirm pass/fail from pod logs without attaching debuggers.
+
+### Rationale
+- `ApplicationRunner` was selected over a manual REST trigger because startup
+  execution is automatic per pod lifecycle, removes operator timing variance,
+  and validates connectivity before the pod can ever receive traffic.
+- Fail-fast semantics guarantee DNS and service-discovery issues surface as
+  immediate startup failures rather than latent runtime defects.
+- Sequential assertions establish a deterministic validation contract and make
+  troubleshooting straightforward from first failure point.
+
+### Trade-offs
+- Startup time increases slightly due to one-time dependency probes.
+- Redis smoke check writes a temporary key; TTL-bound namespacing limits any
+  operational footprint.
+- Strict fail-fast can cause CrashLoopBackOff during infra incidents, which is
+  intentional because it prevents false-positive readiness.
+
+---
+
+## ADR-025: Domain Modeling and SSE Ingestion Pipeline Architecture
+
+**Date**: 2026-04-05
+**Status**: Accepted
+
+### Context
+Phase 4 Task 3 introduces the production ingestion contract from Wikimedia
+`recentchange` into Kafka topic `wiki-edits`. We must formalize immutable
+domain modeling with Java records, enforce partition ordering by page title,
+and protect JVM memory during burst traffic using bounded backpressure.
+
+### Decision
+1. Model ingestion payloads with Java 21 records under the producer domain
+   package, including a canonical `WikiEditEvent` and nested value objects
+   (`Meta`, optional `User`) for normalized schema representation.
+2. Keep the SSE ingestion path reactive with Spring WebFlux `WebClient` and a
+   bounded `onBackpressureBuffer(...)` strategy.
+3. Publish to Kafka asynchronously with `kafkaTemplate.send(...).whenComplete(...)`
+   and key records by page `title` to preserve per-page ordering.
+4. Enforce producer reliability defaults: `StringSerializer` key,
+   `JsonSerializer` value, and idempotence enabled.
+
+### Wikipedia `recentchange` to Java DTO Mapping
+
+| Wikimedia JSON Field | Source Type | Java Record Field | Target Type | Mapping Rule |
+|---|---|---|---|---|
+| `id` | number/string | `id` | `Long` | Parse numeric directly; parse string fallback; null if invalid |
+| `title` | string | `title` | `String` | Required partition key for Kafka |
+| `user` | string | `user` or `user.name` | `String` | Preserve actor username exactly as emitted |
+| `timestamp` | epoch seconds | `timestamp` | `Instant` | Convert using `Instant.ofEpochSecond(...)` |
+| `type` | string | `type` | `String` | Persist raw event type; ingest pipeline filters `edit` |
+| `bot` | boolean | `bot` | `Boolean` | Default to `false` if absent |
+| `comment` | string | `comment` | `String` | Preserve text; default empty string when null |
+| `meta.domain` | string | `meta.domain` | `String` | Optional metadata passthrough |
+| `meta.uri` | string | `meta.uri` | `String` | Optional metadata passthrough |
+| `meta.stream` | string | `meta.stream` | `String` | Optional metadata passthrough |
+| `meta.dt` | ISO-8601 string | `meta.dt` | `Instant` | Parse ISO-8601 timestamp when present |
+
+### Backpressure and Async Publish Interaction
+- `WebClient` emits a reactive `Flux` from the live SSE stream. This ingress is
+  intentionally decoupled from broker acknowledgement latency.
+- `onBackpressureBuffer(N)` creates a bounded buffer to absorb short spikes
+  while downstream Kafka I/O catches up.
+- Kafka publishing remains non-blocking by attaching `.whenComplete(...)`
+  callbacks instead of using `.get()` or `.join()`. Reactor threads therefore
+  never block on broker round trips.
+- If throughput exceeds sustained capacity and the buffer reaches its cap, the
+  stream fails fast, then reconnects using exponential backoff. This protects
+  the process from unbounded queue growth and OutOfMemoryError conditions.
+- Combined with idempotent producer semantics, retries preserve delivery
+  correctness while maintaining pipeline liveness under unstable networks.
+
+### Rationale
+- Aligns with ADR-001 record-first immutable DTO design.
+- Operationalizes ADR-009 reactive backpressure and reconnection guarantees.
+- Reinforces ADR-010 partition key policy (`title`) for per-page ordering.
+- Complies with ADR-016 asynchronous Kafka publishing and explicit success/fail
+  callback telemetry.
+
+### Trade-offs
+- Richer record modeling increases mapping code complexity versus raw map usage.
+- Bounded buffers can still shed load under extreme sustained spikes, but this
+  is preferred over process instability.
+- Async callbacks require careful logging discipline to avoid noisy logs at
+  peak event rates.

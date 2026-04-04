@@ -1,6 +1,6 @@
 package com.wikipulse.worker.consumer;
 
-import com.wikipulse.producer.model.WikiEditEvent;
+import com.wikipulse.producer.domain.WikiEditEvent;
 import com.wikipulse.worker.metrics.WorkerMetrics;
 import com.wikipulse.worker.service.AnalyticsService;
 import com.wikipulse.worker.service.DeduplicationService;

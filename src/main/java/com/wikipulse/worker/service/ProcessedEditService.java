@@ -1,6 +1,6 @@
 package com.wikipulse.worker.service;
 
-import com.wikipulse.producer.model.WikiEditEvent;
+import com.wikipulse.producer.domain.WikiEditEvent;
 import com.wikipulse.worker.entity.ProcessedEdit;
 import com.wikipulse.worker.repository.ProcessedEditRepository;
 import org.slf4j.Logger;
