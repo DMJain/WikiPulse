@@ -1,10 +1,10 @@
-import LiveEditFeed from './components/LiveEditFeed';
+import DashboardLayout from './components/DashboardLayout.tsx';
 import './App.css';
 
 function App() {
   return (
     <main className="app-shell">
-      <LiveEditFeed />
+      <DashboardLayout />
     </main>
   );
 }

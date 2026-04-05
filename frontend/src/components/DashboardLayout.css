@@ -1,0 +1,90 @@
+.dashboard-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.dashboard-header {
+  background: var(--panel-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  padding: 1.25rem 1.35rem;
+  box-shadow: 0 12px 30px rgba(15, 66, 57, 0.1);
+}
+
+.dashboard-kicker {
+  margin: 0;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-muted);
+  font-size: 0.76rem;
+}
+
+.dashboard-header h1 {
+  margin: 0.45rem 0 0;
+  font-size: clamp(1.55rem, 2.2vw, 2.15rem);
+  line-height: 1.2;
+}
+
+.dashboard-subtitle {
+  margin: 0.5rem 0 0;
+  color: var(--ink-muted);
+  max-width: 68ch;
+  font-size: 0.92rem;
+}
+
+.dashboard-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.dashboard-tab-button {
+  text-align: left;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.76);
+  color: inherit;
+  padding: 0.85rem 0.95rem;
+  display: grid;
+  gap: 0.2rem;
+  cursor: pointer;
+  transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.dashboard-tab-button:hover {
+  border-color: rgba(6, 118, 94, 0.55);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(15, 66, 57, 0.1);
+}
+
+.dashboard-tab-button.active {
+  border-color: rgba(6, 118, 94, 0.95);
+  background: linear-gradient(135deg, rgba(0, 143, 122, 0.2), rgba(255, 255, 255, 0.92));
+}
+
+.dashboard-tab-button:focus-visible {
+  outline: 3px solid rgba(13, 148, 136, 0.35);
+  outline-offset: 2px;
+}
+
+.tab-label {
+  font-weight: 700;
+  font-size: 0.96rem;
+  color: var(--ink-strong);
+}
+
+.tab-subtitle {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.dashboard-panel {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .dashboard-tabs {
+    grid-template-columns: 1fr;
+  }
+}

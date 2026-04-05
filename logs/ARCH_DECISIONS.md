@@ -930,3 +930,59 @@ latency, especially when dashboards refresh frequently.
 - JPQL alias/projection contracts require stricter naming discipline.
 - Near-real-time dashboards reflect committed database state, not transient
   in-flight Kafka messages.
+
+---
+
+## ADR-033: Frontend Analytics Dashboard Layout and Charting Strategy
+
+**Date**: 2026-04-05
+**Status**: Accepted
+
+### Context
+Phase 8 introduces a richer dashboard UX that must present two different
+interaction models without conflating transport concerns:
+1. **Live Firehose** for high-frequency event streaming (existing STOMP/SockJS).
+2. **Analytics Overview** for aggregate snapshots (top languages, namespace
+   distribution, bot-vs-human ratio).
+
+The existing frontend is feed-centric and mounts live-stream behavior directly
+in the primary page. At the same time, Phase 7 introduced lightweight,
+chart-ready REST aggregations under `/api/analytics/*`. We need a UI structure
+that exposes both capabilities while keeping operational load predictable.
+
+### Decision
+1. Introduce a top-level **tabbed dashboard layout** with two tabs:
+   - `Analytics Overview`
+   - `Live Firehose`
+2. Adopt **Recharts** as the frontend charting library for declarative,
+   responsive visualizations in React.
+3. Implement Analytics Overview charts from Phase 7 endpoints:
+   - `GET /api/analytics/languages?limit=5` -> bar chart (labels derived from
+     `serverUrl`)
+   - `GET /api/analytics/namespaces` -> donut/pie chart
+   - `GET /api/analytics/bots` -> donut/pie chart
+4. Fetch analytics data on tab/component mount and allow optional 10-second
+   polling for near-real-time refresh.
+5. Keep the heavy STOMP/SockJS live stream connection exclusive to the
+   `Live Firehose` tab; Analytics Overview must not require a WebSocket session
+   to render.
+
+### Rationale
+- **Separation of responsibilities**: live event transport and aggregate
+  analytics have different latency, payload, and lifecycle requirements.
+- **Operational efficiency**: aggregation endpoints return compact grouped
+  datasets and are safe to poll at modest intervals without incurring stream
+  fan-out overhead.
+- **User experience clarity**: explicit tabs reduce cognitive noise by
+  separating strategic insight (charts) from tactical monitoring (firehose).
+- **Frontend maintainability**: Recharts provides composable primitives
+  (`ResponsiveContainer`, `BarChart`, `PieChart`, `Tooltip`, `Legend`) that fit
+  TypeScript React patterns and keep rendering logic declarative.
+
+### Trade-offs
+- Polling introduces bounded staleness (up to polling interval) versus true
+  push-based updates.
+- Additional HTTP reads are generated when polling is enabled, though payloads
+  remain small and aggregation is database-side.
+- Mapping `serverUrl` to a language label can require normalization heuristics
+  for non-standard host patterns.
