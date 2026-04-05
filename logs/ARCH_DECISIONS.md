@@ -784,3 +784,55 @@ and risk tab instability.
   deduplication is layered in the reducer path.
 - SockJS fallback improves compatibility but can add latency versus native
   WebSocket transport.
+
+---
+
+## ADR-029: Elastic Scaling Ceiling by Kafka Partition Cardinality
+
+**Date**: 2026-04-05
+**Status**: Accepted
+
+### Context
+Phase 6 Task 1 introduces Horizontal Pod Autoscaling for
+`deployment/wikipulse-worker`. The worker consumes from Kafka topic
+`wiki-edits`, which is fixed at 3 partitions (ADR-007). Kafka consumer-group
+semantics allow only one active consumer per partition within the same group at
+any instant.
+
+The previous scaling ceiling (`maxReplicas: 6`, ADR-022) intentionally allowed
+hot-standby pods. For this phase, the requirement is to optimize for effective
+throughput per resource unit and avoid paying for replicas that cannot actively
+consume partitions.
+
+### Decision
+1. Set worker HPA bounds to `minReplicas: 1` and `maxReplicas: 3`.
+2. Keep the worker in a single consumer group (`wikipulse-worker-group`) so
+   Kafka can rebalance ownership of the 3 partitions across available pods.
+3. Treat `replicas > partitions` as non-beneficial for steady-state throughput
+   because excess pods will remain idle with zero assigned partitions.
+
+### Rationale
+- With 3 partitions, the maximum parallel consumer throughput in one consumer
+  group is capped at 3 active consumers. A 4th+ pod does not increase
+  concurrent partition processing.
+- Extra replicas above partition count still incur scheduler, memory, and
+  health-probe overhead while often sitting idle, which worsens cost-efficiency.
+- Keeping `maxReplicas` equal to partition count creates a clean one-to-one
+  ceiling: one pod can own one partition under full scale-out.
+- `minReplicas: 1` is sufficient during low traffic because one consumer can
+  process all three partitions sequentially while preserving consumer-group
+  correctness.
+
+### Consequences
+- Peak scale-out is intentionally capped at 3 pods unless partition count is
+  increased in a future ADR.
+- If sustained load exceeds what 3 partitions can absorb, the correct next step
+  is repartitioning/topic redesign rather than adding idle replicas.
+- This decision supersedes ADR-022 only for replica ceiling policy
+  (`maxReplicas: 6` -> `maxReplicas: 3`).
+
+### Trade-offs
+- We lose hot-standby pods that could reduce takeover latency after a pod
+  failure.
+- Recovery speed now depends more directly on Kubernetes scheduling and Kafka
+  rebalance time when replacing failed consumers.

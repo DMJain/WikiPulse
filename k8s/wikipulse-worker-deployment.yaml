@@ -6,7 +6,7 @@ metadata:
     app: wikipulse-worker
   annotations:
     smoke.protocol: "ADR-024"
-    smoke.mode: "phase4-task2"
+    smoke.mode: "phase5-task2"
 spec:
   replicas: 1
   selector:
@@ -24,7 +24,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: wikipulse-worker
-          image: wikipulse-worker:phase4-task2
+          image: wikipulse-ingestor:latest
           imagePullPolicy: Never
           ports:
             - containerPort: 8080
