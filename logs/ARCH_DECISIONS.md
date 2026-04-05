@@ -681,3 +681,59 @@ delivery with idempotent side effects.
 - Redis TTL-based dedup is probabilistic beyond 24 hours by design.
 - Save-before-ack can increase replay frequency during hard crashes, but replay
   is safe due to dedup + primary-key constraints.
+
+---
+
+## ADR-027: API and Real-Time Communication Strategy
+
+**Date**: 2026-04-05
+**Status**: Accepted
+
+### Context
+Phase 5 Task 1 introduces a dashboard consumption layer with two distinct read
+paths:
+1. A historical bootstrap path for initial page load (latest processed edits).
+2. A low-latency push path for newly processed edits.
+
+The worker already guarantees save-before-ack semantics (ADR-026). We must add
+real-time broadcasting without coupling messaging concerns directly into Kafka
+listener flow or weakening reliability boundaries.
+
+### Decision
+1. Expose REST endpoint `GET /api/edits/recent?limit=N` for historical reads
+   from PostgreSQL using `ProcessedEditRepository` ordered by
+   `editTimestamp DESC`.
+2. Use Spring WebSocket messaging with **STOMP over SockJS**:
+   - WebSocket endpoint: `/ws-wikipulse`
+   - Broker destination prefix: `/topic`
+   - Live dashboard channel: `/topic/edits`
+   - App destination prefix (reserved): `/app`
+3. Decouple live push from Kafka consumer by publishing from the persistence
+   boundary (`ProcessedEditService`) after a successful DB save. The service
+   emits a lightweight payload to a dedicated broadcaster service rather than
+   embedding broker code in `WikiEditConsumer`.
+
+### Dispatch Model
+- **Trigger point**: Immediately after `repository.save(entity)` succeeds.
+- **Payload contract**: Lightweight DTO carrying only dashboard-facing fields
+  (id, userName, pageTitle, eventType, editTimestamp, isBot, complexityScore).
+- **Broadcast transport**: `SimpMessagingTemplate.convertAndSend("/topic/edits", dto)`.
+- **Failure posture**: WebSocket publish errors are logged and metered but do
+  not roll back Kafka acknowledgment logic unless future requirements demand
+  transactional coupling.
+
+### Rationale
+- **Client compatibility**: SockJS offers graceful fallback for environments
+  where native WebSockets are blocked, while STOMP provides standardized
+  topic/subscription semantics for React dashboards.
+- **Separation of concerns**: Kafka consumer remains focused on ingestion,
+  deduplication, analytics, and persistence. API push mechanics are isolated in
+  dedicated services.
+- **Operational safety**: Save-first then push ensures dashboards only receive
+  events that have already crossed the system's durability boundary.
+
+### Trade-offs
+- STOMP frames add protocol overhead versus raw WebSocket payloads.
+- SockJS fallback transports can increase latency under constrained networks.
+- Post-save broadcast may temporarily diverge from UI expectations during
+  broker outages (data remains available via REST backfill endpoint).

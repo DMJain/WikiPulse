@@ -13,9 +13,12 @@ public class ProcessedEditService {
 
   private static final Logger log = LoggerFactory.getLogger(ProcessedEditService.class);
   private final ProcessedEditRepository repository;
+  private final LiveDashboardUpdateService liveDashboardUpdateService;
 
-  public ProcessedEditService(ProcessedEditRepository repository) {
+  public ProcessedEditService(
+      ProcessedEditRepository repository, LiveDashboardUpdateService liveDashboardUpdateService) {
     this.repository = repository;
+    this.liveDashboardUpdateService = liveDashboardUpdateService;
   }
 
   @Transactional
@@ -30,9 +33,11 @@ public class ProcessedEditService {
     entity.setEditComment(event.comment());
     entity.setEditTimestamp(event.timestamp());
 
-    repository.save(entity);
+    ProcessedEdit savedEntity = repository.save(entity);
+    liveDashboardUpdateService.broadcastEdit(savedEntity);
+
     if (log.isDebugEnabled()) {
-      log.debug("Saved ProcessedEdit with ID {}", entity.getId());
+      log.debug("Saved ProcessedEdit with ID {}", savedEntity.getId());
     }
   }
 }
