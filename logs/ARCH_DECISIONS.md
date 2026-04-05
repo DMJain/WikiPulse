@@ -986,3 +986,53 @@ that exposes both capabilities while keeping operational load predictable.
   remain small and aggregation is database-side.
 - Mapping `serverUrl` to a language label can require normalization heuristics
   for non-standard host patterns.
+
+---
+
+## ADR-034: Unified Local Docker Orchestration and Nginx Reverse Proxy
+
+**Date**: 2026-04-06
+**Status**: Accepted
+
+### Context
+Phase 9 requires a one-command local deployment path so reviewers can launch the
+full WikiPulse stack with minimal setup overhead. The backend depends on
+PostgreSQL, Redis, Kafka, and ZooKeeper. The frontend is a Vite React app that
+consumes Spring Boot REST and SockJS/STOMP WebSocket endpoints.
+
+Running frontend and backend on different browser origins introduces avoidable
+CORS complexity in containerized local deployments. A single-origin entrypoint
+is required for deterministic demos and portfolio evaluation.
+
+### Decision
+1. Standardize local startup on one root `docker-compose.yml` that includes
+   PostgreSQL, Redis, ZooKeeper, Kafka, the Spring Boot worker backend, and
+   the frontend UI.
+2. Containerize the frontend with a multi-stage Docker build:
+   - Stage 1: Node-based Vite build pipeline.
+   - Stage 2: Nginx Alpine static file serving.
+3. Use Nginx as the frontend runtime reverse proxy:
+   - `/api` forwards to the backend REST API.
+   - `/ws-wikipulse` forwards to the backend WebSocket/SockJS endpoint with
+     HTTP upgrade headers.
+4. Enforce strict dependency sequencing with health-gated startup:
+   - Kafka starts only after ZooKeeper is healthy.
+   - Worker starts only after Kafka, PostgreSQL, and Redis are healthy.
+5. Publish the frontend at `localhost:3000` as the single local user entrypoint.
+
+### Rationale
+- One-click orchestration lowers reviewer friction and ensures repeatable
+  startup behavior.
+- Fronting the React app with Nginx and proxying backend routes is the standard
+  deployment pattern for eliminating browser-side CORS constraints via
+  same-origin routing.
+- Health-gated sequencing prevents race conditions observed in stateful service
+  initialization chains, especially ZooKeeper and Kafka.
+- A single ingress surface keeps local topology intuitive while preserving
+  backend service isolation inside the Docker network.
+
+### Trade-offs
+- Adds Nginx as an additional runtime component to maintain.
+- Reverse-proxy behavior must stay aligned with backend route contracts.
+- Local compose settings prioritize demo reliability over production ingress
+  parity (TLS, WAF policies, and external load balancing remain out of scope).

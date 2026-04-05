@@ -1,77 +1,4 @@
-version: '3.8'
-
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
-    container_name: zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    networks:
-      - wikipulse-net
-    ports:
-      - "2181:2181"
-    healthcheck:
-      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-    ports:
-      - "9092:9092"
-      - "29092:29092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-    networks:
-      - wikipulse-net
-    healthcheck:
-      test: nc -z localhost 9092 || exit -1
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  kafka-init:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka-init
-    depends_on:
-      kafka:
-        condition: service_healthy
-    networks:
-      - wikipulse-net
-    command: >
-      bash -c "
-        echo 'Waiting for Kafka to be ready...'
-        cub kafka-ready -b kafka:29092 1 30
-        echo 'Creating wiki-edits topic'
-        kafka-topics --create --if-not-exists --topic wiki-edits --partitions 3 --replication-factor 1 --bootstrap-server kafka:29092
-      "
-
-  redis:
-    image: redis:7.2-alpine
-    container_name: redis
-    ports:
-      - "6379:6379"
-    networks:
-      - wikipulse-net
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   postgres:
     image: postgres:15-alpine
     container_name: postgres
@@ -89,15 +16,86 @@ services:
       test: ["CMD-SHELL", "pg_isready -U wikipulse -d wikipulsedb"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 6
+      start_period: 10s
 
-  wikipulse-ingestor:
-    build: .
-    container_name: wikipulse-ingestor
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    networks:
+      - wikipulse-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: 'kafka:29092'
-      SPRING_DATASOURCE_URL: 'jdbc:postgresql://postgres:5432/wikipulsedb'
-      SPRING_REDIS_HOST: 'redis'
+      ZOOKEEPER_CLIENT_PORT: "2181"
+      ZOOKEEPER_TICK_TIME: "2000"
+      KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=ruok"
+    ports:
+      - "2181:2181"
+    networks:
+      - wikipulse-net
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc -w 1 localhost 2181 | grep imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    restart: on-failure
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: "1"
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: "3"
+    networks:
+      - wikipulse-net
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+
+  wikipulse-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wikipulse-ingestor:latest
+    container_name: wikipulse-worker
+    environment:
+      WIKIPULSE_SMOKE_TEST_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/wikipulsedb"
+      SPRING_DATA_REDIS_HOST: "redis"
+      POSTGRES_PASSWORD: "wikipulse_password"
     depends_on:
       kafka:
         condition: service_healthy
@@ -105,6 +103,31 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    expose:
+      - "8080"
+    networks:
+      - wikipulse-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "/"
+        VITE_WS_URL: "/ws-wikipulse"
+    image: wikipulse-frontend:latest
+    container_name: wikipulse-frontend
+    depends_on:
+      wikipulse-worker:
+        condition: service_healthy
+    ports:
+      - "3000:80"
     networks:
       - wikipulse-net
 
