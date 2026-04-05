@@ -31,6 +31,8 @@ public class ProcessedEditService {
     entity.setPageTitle(event.title());
     entity.setEventType(event.type());
     entity.setEditComment(event.comment());
+    entity.setServerUrl(event.serverUrl());
+    entity.setNamespace(event.namespace());
     entity.setEditTimestamp(event.timestamp());
 
     ProcessedEdit savedEntity = repository.save(entity);

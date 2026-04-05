@@ -71,6 +71,8 @@ class KafkaProducerIntegrationTests {
             "edit",
             false,
             "Fixed typo in test data",
+        "https://en.wikipedia.org",
+        0,
             new WikiEditEvent.Meta(
                 "en.wikipedia.org",
                 "recentchange",

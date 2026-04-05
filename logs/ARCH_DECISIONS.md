@@ -836,3 +836,97 @@ consume partitions.
   failure.
 - Recovery speed now depends more directly on Kubernetes scheduling and Kafka
   rebalance time when replacing failed consumers.
+
+---
+
+## ADR-031: Deep Data Enrichment Strategy for Stream-Native Analytics
+
+**Date**: 2026-04-05
+**Status**: Accepted
+
+### Context
+Phase 7 introduces dashboard analytics that need stronger segmentation than the
+current event core (`user`, `title`, `timestamp`, `bot`). Specifically, Phase 8
+queries must group and filter edits by wiki origin and content class without
+calling external services during ingestion.
+
+The Wikimedia `recentchange` payload contains many optional or high-entropy
+fields (including long text fragments and nested metadata) that can inflate
+memory pressure if ingested wholesale. Our producer pipeline is intentionally
+bounded by reactive backpressure and asynchronous Kafka publishing; adding large
+payload extraction would widen object graphs, increase serialization cost, and
+raise GC churn during burst traffic.
+
+### Decision
+1. Expand the canonical edit schema with two lightweight enrichment fields:
+   - `server_url` (String), for example `https://en.wikipedia.org`
+   - `namespace` (Integer), for example `0` (article), `2` (user)
+2. Parse both values directly from the incoming Wikimedia event map inside the
+   SSE mapper, using safe fallback parsing to avoid stream interruption on
+   malformed data.
+3. Persist both fields in `ProcessedEdit`, and add a database index on
+   `server_url` to optimize Phase 8 aggregation/read paths.
+4. Explicitly defer heavy enrichment candidates (raw text bodies, remote
+   category lookups, external API joins) to later offline pipelines.
+
+### Rationale
+- `server_url` provides a stable language/region grouping key at low payload
+  cost, enabling fast analytics like per-wiki traffic and bot concentration.
+- `namespace` introduces high-value content classification (article vs user vs
+  template/system spaces) while staying computationally trivial to parse.
+- Both fields are scalar and compact, preserving ingestion throughput and
+  backpressure boundaries under firehose spikes.
+- Indexing `server_url` now prevents expensive table scans when Phase 8 UI
+  adds grouped timelines and leaderboard-style breakdowns.
+- This strategy maximizes analytical leverage per byte stored, which is the
+  desired trade-off for real-time stream systems.
+
+### Trade-offs
+- Additional columns slightly increase row width and write amplification.
+- `server_url` may contain host variants that require normalization in future
+  reporting layers.
+- Deferring richer enrichment means some advanced semantic analytics remain
+  out-of-scope for this phase by design.
+
+---
+
+## ADR-032: Database-Side Aggregation and Query Strategy for Analytics API
+
+**Date**: 2026-04-05
+**Status**: Accepted
+
+### Context
+Phase 7 Task 2 introduces analytics endpoints for chart-ready aggregate metrics:
+top languages (`server_url`), namespace distribution (`namespace`), and bot
+ratio (`is_bot`). The `processed_edits` table is expected to grow continuously
+under stream ingestion, so aggregation strategy must scale with row count.
+
+A client-side or middle-tier approach (fetching many rows and aggregating with
+Java Streams) would increase memory footprint, network transfer, and request
+latency, especially when dashboards refresh frequently.
+
+### Decision
+1. Perform all core aggregations in PostgreSQL via JPQL `@Query` methods using
+   `GROUP BY` and `COUNT`.
+2. Return compact projection DTOs/interfaces from repository methods rather
+   than loading full `ProcessedEdit` entities.
+3. Apply descending count ordering in the query for ranking use-cases and
+   enforce top-N for language charts using pageable limits.
+4. Expose dedicated REST analytics endpoints under `/api/analytics/*` that
+   forward repository aggregate results without in-memory re-aggregation.
+
+### Rationale
+- Database engines are optimized for aggregation pushdown; executing grouping
+  where data resides avoids unnecessary row materialization in the JVM.
+- Projection-based reads reduce payload size and serialization overhead for
+  dashboard endpoints.
+- JPQL keeps the implementation database-portable while still allowing index-
+  aware execution plans in PostgreSQL.
+- Top-N limiting at query time keeps latency predictable and prevents over-
+  rendering in frontend chart libraries.
+
+### Trade-offs
+- Aggregation query complexity increases repository surface area and test scope.
+- JPQL alias/projection contracts require stricter naming discipline.
+- Near-real-time dashboards reflect committed database state, not transient
+  in-flight Kafka messages.

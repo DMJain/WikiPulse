@@ -13,7 +13,8 @@ import org.springframework.data.domain.Persistable;
     name = "processed_edits",
     indexes = {
       @Index(name = "idx_user_timestamp", columnList = "user_name, edit_timestamp"),
-      @Index(name = "idx_page_title", columnList = "page_title")
+      @Index(name = "idx_page_title", columnList = "page_title"),
+      @Index(name = "idx_server_url", columnList = "server_url")
     })
 public class ProcessedEdit implements Persistable<Long> {
 
@@ -32,6 +33,12 @@ public class ProcessedEdit implements Persistable<Long> {
 
   @Column(name = "edit_comment", columnDefinition = "TEXT")
   private String editComment;
+
+  @Column(name = "server_url", length = 255)
+  private String serverUrl;
+
+  @Column(name = "namespace")
+  private Integer namespace;
 
   @Column(name = "edit_timestamp", nullable = false)
   private Instant editTimestamp;
@@ -82,6 +89,22 @@ public class ProcessedEdit implements Persistable<Long> {
 
   public void setEditComment(String editComment) {
     this.editComment = editComment;
+  }
+
+  public String getServerUrl() {
+    return serverUrl;
+  }
+
+  public void setServerUrl(String serverUrl) {
+    this.serverUrl = serverUrl;
+  }
+
+  public Integer getNamespace() {
+    return namespace;
+  }
+
+  public void setNamespace(Integer namespace) {
+    this.namespace = namespace;
   }
 
   public Instant getEditTimestamp() {

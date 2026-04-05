@@ -94,6 +94,8 @@ public class WikipediaSseClient {
         parseString(raw.get("type")),
         parseBoolean(raw.get("bot")),
         parseStringOrDefault(raw.get("comment"), ""),
+      parseString(raw.get("server_url")),
+      parseInteger(raw.get("namespace")),
         parseMeta(raw.get("meta")));
   }
 
@@ -143,7 +145,28 @@ public class WikipediaSseClient {
   }
 
   private String parseString(Object value) {
-    return value instanceof String text ? text : null;
+    if (value == null) {
+      return null;
+    }
+    return value instanceof String text ? text : String.valueOf(value);
+  }
+
+  private Integer parseInteger(Object value) {
+    if (value instanceof Number number) {
+      long longValue = number.longValue();
+      if (longValue < Integer.MIN_VALUE || longValue > Integer.MAX_VALUE) {
+        return null;
+      }
+      return (int) longValue;
+    }
+    if (value instanceof String text) {
+      try {
+        return Integer.parseInt(text);
+      } catch (NumberFormatException ignored) {
+        return null;
+      }
+    }
+    return null;
   }
 
   private String parseStringOrDefault(Object value, String fallback) {

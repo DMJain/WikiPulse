@@ -10,6 +10,8 @@ public record WikiEditEvent(
     String type,
     Boolean bot,
     String comment,
+    String serverUrl,
+    Integer namespace,
     Meta meta) {
 
   public record Meta(String domain, String stream, String uri, Instant dt) {}
