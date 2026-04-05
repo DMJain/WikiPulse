@@ -4,12 +4,14 @@ import com.wikipulse.worker.api.dto.EditUpdateDto;
 import com.wikipulse.worker.domain.ProcessedEditRepository;
 import java.util.List;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@CrossOrigin(origins = {"http://localhost:5173", "http://127.0.0.1:5173"})
 @RequestMapping("/api/edits")
 public class AnalyticsController {
 

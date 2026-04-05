@@ -737,3 +737,50 @@ listener flow or weakening reliability boundaries.
 - SockJS fallback transports can increase latency under constrained networks.
 - Post-save broadcast may temporarily diverge from UI expectations during
   broker outages (data remains available via REST backfill endpoint).
+
+---
+
+## ADR-028: Frontend Real-Time State Strategy
+
+**Date**: 2026-04-05
+**Status**: Accepted
+
+### Context
+Phase 5 Task 2 adds a browser dashboard that must:
+1. Hydrate quickly with recent history from the backend REST API.
+2. Continue updating in real time as new edits arrive via WebSocket.
+
+Wikipedia edit throughput can spike significantly. An unbounded client-side
+array would eventually degrade rendering, increase garbage-collection pressure,
+and risk tab instability.
+
+### Decision
+1. Use **Vite + React + TypeScript** for frontend build/runtime ergonomics and
+   strict typing of edit payloads.
+2. Use **STOMP over SockJS** (`@stomp/stompjs` + `sockjs-client`) against
+   backend endpoint `/ws-wikipulse`, subscribing to `/topic/edits`.
+3. Maintain feed state as a bounded **rolling window** with a hard cap of
+   100 items.
+   - Initial load fetches `GET /api/edits/recent?limit=100`.
+   - Each live event is prepended to the array.
+   - State is truncated immediately to the newest 100 items.
+
+### State Contract
+- Ordering: newest-first for immediate dashboard readability.
+- Capacity: constant upper bound (100) to prevent DOM/memory bloat.
+- Lifecycle: explicit WebSocket connect on mount and disconnect on unmount.
+- Presentation: `isBot` drives badge/background differentiation for fast visual
+  scan of automated versus human edits.
+
+### Rationale
+- Bounded state guarantees O(1) memory growth relative to stream duration.
+- Newest-first display aligns with operational monitoring workflows.
+- TypeScript contracts reduce runtime mismatches between REST and STOMP payloads.
+- Vite shortens feedback loop and keeps frontend independent from Spring build.
+
+### Trade-offs
+- Older entries beyond 100 are dropped from in-memory UI state by design.
+- Occasional duplicates can appear during reconnect races unless optional ID
+  deduplication is layered in the reducer path.
+- SockJS fallback improves compatibility but can add latency versus native
+  WebSocket transport.
