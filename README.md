@@ -121,6 +121,8 @@ cd WikiPulse
 docker compose up -d --build
 ```
 
+Grafana is auto-provisioned and instantly available at http://localhost:3001 after startup.
+
 ### Validate
 
 ```bash
@@ -129,6 +131,7 @@ docker compose ps
 
 ### Access Points
 - UI: http://localhost:3000
+- Grafana: http://localhost:3001
 - REST example: http://localhost:3000/api/edits/recent?limit=5
 - STOMP/SockJS probe: http://localhost:3000/ws-wikipulse/info?t=1
 

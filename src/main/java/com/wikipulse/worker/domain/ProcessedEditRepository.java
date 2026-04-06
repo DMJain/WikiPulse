@@ -39,45 +39,88 @@ public interface ProcessedEditRepository extends JpaRepository<ProcessedEdit, Lo
 
   List<ProcessedEdit> findByOrderByEditTimestampDesc(Pageable pageable);
 
+  default List<LanguageCount> findTopLanguages(Pageable pageable, Instant since, Boolean isBot) {
+    return findTopLanguagesInternal(
+        pageable,
+        since != null,
+        since != null ? since : Instant.EPOCH,
+        isBot != null,
+        Boolean.TRUE.equals(isBot));
+  }
+
   @Query(
       """
       select p.serverUrl as serverUrl, count(p) as count
       from ProcessedEdit p
       where p.serverUrl is not null
         and p.serverUrl <> ''
-        and (:since is null or p.editTimestamp >= :since)
-        and (:isBot is null or p.isBot = :isBot)
+        and (:applySince = false or p.editTimestamp >= :since)
+        and (:applyIsBot = false or p.isBot = :isBotValue)
       group by p.serverUrl
       order by count(p) desc
       """)
-  List<LanguageCount> findTopLanguages(
-      Pageable pageable, @Param("since") Instant since, @Param("isBot") Boolean isBot);
+  List<LanguageCount> findTopLanguagesInternal(
+      Pageable pageable,
+      @Param("applySince") boolean applySince,
+      @Param("since") Instant since,
+      @Param("applyIsBot") boolean applyIsBot,
+      @Param("isBotValue") boolean isBotValue);
+
+  default List<NamespaceCount> findNamespaceBreakdown(Instant since, Boolean isBot) {
+    return findNamespaceBreakdownInternal(
+        since != null,
+        since != null ? since : Instant.EPOCH,
+        isBot != null,
+        Boolean.TRUE.equals(isBot));
+  }
 
   @Query(
       """
       select p.namespace as namespace, count(p) as count
       from ProcessedEdit p
       where p.namespace is not null
-        and (:since is null or p.editTimestamp >= :since)
-        and (:isBot is null or p.isBot = :isBot)
+        and (:applySince = false or p.editTimestamp >= :since)
+        and (:applyIsBot = false or p.isBot = :isBotValue)
       group by p.namespace
       order by count(p) desc
       """)
-  List<NamespaceCount> findNamespaceBreakdown(
-      @Param("since") Instant since, @Param("isBot") Boolean isBot);
+  List<NamespaceCount> findNamespaceBreakdownInternal(
+      @Param("applySince") boolean applySince,
+      @Param("since") Instant since,
+      @Param("applyIsBot") boolean applyIsBot,
+      @Param("isBotValue") boolean isBotValue);
+
+  default List<BotCount> findBotVsHumanBreakdown(Instant since, Boolean isBot) {
+    return findBotVsHumanBreakdownInternal(
+        since != null,
+        since != null ? since : Instant.EPOCH,
+        isBot != null,
+        Boolean.TRUE.equals(isBot));
+  }
 
   @Query(
       """
       select p.isBot as isBot, count(p) as count
       from ProcessedEdit p
       where p.isBot is not null
-        and (:since is null or p.editTimestamp >= :since)
-        and (:isBot is null or p.isBot = :isBot)
+        and (:applySince = false or p.editTimestamp >= :since)
+        and (:applyIsBot = false or p.isBot = :isBotValue)
       group by p.isBot
       order by count(p) desc
       """)
-  List<BotCount> findBotVsHumanBreakdown(
-      @Param("since") Instant since, @Param("isBot") Boolean isBot);
+  List<BotCount> findBotVsHumanBreakdownInternal(
+      @Param("applySince") boolean applySince,
+      @Param("since") Instant since,
+      @Param("applyIsBot") boolean applyIsBot,
+      @Param("isBotValue") boolean isBotValue);
+
+  default KpiSnapshot getKpiSnapshot(Instant since, Boolean isBot) {
+    return getKpiSnapshotInternal(
+        since != null,
+        since != null ? since : Instant.EPOCH,
+        isBot != null,
+        Boolean.TRUE.equals(isBot));
+  }
 
   @Query(
       """
@@ -85,8 +128,12 @@ public interface ProcessedEditRepository extends JpaRepository<ProcessedEdit, Lo
              coalesce(sum(case when p.isBot = true then 1 else 0 end), 0) as botEdits,
              coalesce(avg(p.complexityScore), 0.0) as averageComplexity
       from ProcessedEdit p
-      where (:since is null or p.editTimestamp >= :since)
-        and (:isBot is null or p.isBot = :isBot)
+      where (:applySince = false or p.editTimestamp >= :since)
+        and (:applyIsBot = false or p.isBot = :isBotValue)
       """)
-  KpiSnapshot getKpiSnapshot(@Param("since") Instant since, @Param("isBot") Boolean isBot);
+  KpiSnapshot getKpiSnapshotInternal(
+      @Param("applySince") boolean applySince,
+      @Param("since") Instant since,
+      @Param("applyIsBot") boolean applyIsBot,
+      @Param("isBotValue") boolean isBotValue);
 }
