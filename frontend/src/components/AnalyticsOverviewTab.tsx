@@ -4,7 +4,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -14,9 +13,11 @@ import {
 } from 'recharts';
 import {
   fetchBotDistribution,
+  fetchKpis,
   fetchNamespaceDistribution,
   fetchTopLanguages,
   type BotCount,
+  type KpiSnapshot,
   type LanguageCount,
   type NamespaceCount,
 } from '../services/api';
@@ -75,6 +76,39 @@ interface PieChartDatum {
   value: number;
 }
 
+type TooltipValue = number | string | Array<number | string>;
+
+const TOOLTIP_CONTENT_STYLE = {
+  borderRadius: 12,
+  border: '1px solid rgba(15, 118, 110, 0.3)',
+  backgroundColor: 'rgba(255, 255, 255, 0.96)',
+} as const;
+
+function formatTooltipValue(value: TooltipValue): string {
+  if (Array.isArray(value)) {
+    return value.join(' - ');
+  }
+
+  const numericValue = typeof value === 'number' ? value : Number(value);
+  if (Number.isFinite(numericValue)) {
+    return `${numericValue.toLocaleString()} edits`;
+  }
+
+  return String(value);
+}
+
+function parseBotFilterValue(value: string): boolean | null {
+  if (value === 'bots') {
+    return true;
+  }
+
+  if (value === 'humans') {
+    return false;
+  }
+
+  return null;
+}
+
 function languageLabelFromServerUrl(serverUrl: string | null): string {
   if (!serverUrl) {
     return 'Unknown';
@@ -94,12 +128,21 @@ function languageLabelFromServerUrl(serverUrl: string | null): string {
   }
 }
 
-function namespaceLabel(namespaceId: number | null): string {
-  if (namespaceId === null) {
+function namespaceLabel(namespaceId: string | null): string {
+  if (!namespaceId || namespaceId.trim() === '') {
     return 'Unknown';
   }
 
-  return NAMESPACE_LABELS[String(namespaceId)] ?? `NS ${namespaceId}`;
+  const normalizedNamespace = namespaceId.trim();
+  const mappedNamespace = NAMESPACE_LABELS[normalizedNamespace];
+
+  if (mappedNamespace) {
+    return mappedNamespace;
+  }
+
+  return /^-?\d+$/.test(normalizedNamespace)
+    ? `NS ${normalizedNamespace}`
+    : normalizedNamespace;
 }
 
 function formatUpdatedAt(timestamp: string | null): string {
@@ -116,28 +159,39 @@ function formatUpdatedAt(timestamp: string | null): string {
 }
 
 export default function AnalyticsOverviewTab() {
+  const [kpis, setKpis] = useState<KpiSnapshot | null>(null);
   const [languageBreakdown, setLanguageBreakdown] = useState<LanguageCount[]>([]);
   const [namespaceBreakdown, setNamespaceBreakdown] = useState<NamespaceCount[]>([]);
   const [botBreakdown, setBotBreakdown] = useState<BotCount[]>([]);
+  const [timeframe, setTimeframe] = useState('');
+  const [isBot, setIsBot] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const selectedTimeframe = timeframe || undefined;
+    const selectedBotFilter = isBot ?? undefined;
 
     const loadAnalytics = async () => {
+      if (!cancelled) {
+        setLoading(true);
+      }
+
       try {
-        const [languages, namespaces, bots] = await Promise.all([
-          fetchTopLanguages(5),
-          fetchNamespaceDistribution(),
-          fetchBotDistribution(),
+        const [kpiSnapshot, languages, namespaces, bots] = await Promise.all([
+          fetchKpis(selectedTimeframe, selectedBotFilter),
+          fetchTopLanguages(5, selectedTimeframe, selectedBotFilter),
+          fetchNamespaceDistribution(selectedTimeframe, selectedBotFilter),
+          fetchBotDistribution(selectedTimeframe, selectedBotFilter),
         ]);
 
         if (cancelled) {
           return;
         }
 
+        setKpis(kpiSnapshot);
         setLanguageBreakdown(languages);
         setNamespaceBreakdown(namespaces);
         setBotBreakdown(bots);
@@ -145,7 +199,7 @@ export default function AnalyticsOverviewTab() {
         setLastUpdatedAt(new Date().toISOString());
       } catch {
         if (!cancelled) {
-          setError('Failed to fetch analytics datasets from API endpoints.');
+          setError('Failed to fetch analytics datasets with the active filters.');
         }
       } finally {
         if (!cancelled) {
@@ -164,7 +218,7 @@ export default function AnalyticsOverviewTab() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [timeframe, isBot]);
 
   const topLanguageData = useMemo<LanguageChartDatum[]>(
     () =>
@@ -207,19 +261,68 @@ export default function AnalyticsOverviewTab() {
   const hasLanguageData = topLanguageData.length > 0;
   const hasBotData = botDistributionData.some((entry) => entry.value > 0);
   const hasNamespaceData = namespaceDistributionData.length > 0;
+  const totalEdits = kpis?.totalEdits ?? 0;
+  const botPercentage = kpis?.botPercentage ?? 0;
+  const averageComplexity = kpis?.averageComplexity ?? 0;
+  const botFilterValue = isBot === null ? 'all' : isBot ? 'bots' : 'humans';
 
   return (
     <section className="analytics-shell">
       <header className="analytics-header">
         <div>
           <p className="analytics-kicker">Analytics Overview</p>
-          <h2>Aggregated Insights (Phase 7 Endpoints)</h2>
+          <h2>Aggregated Insights (Dynamic Filters + KPI Cards)</h2>
           <p>
-            Charts are hydrated from REST and refreshed every 10 seconds to keep trends current.
+            Metrics and charts stay in sync with timeframe and bot-status filters, refreshing every 10
+            seconds.
           </p>
         </div>
         <div className="analytics-refresh-pill">Last updated: {formatUpdatedAt(lastUpdatedAt)}</div>
       </header>
+
+      <section className="analytics-kpi-row" aria-label="KPI metrics">
+        <article className="analytics-kpi-card">
+          <p className="analytics-kpi-label">Total Edits</p>
+          <p className="analytics-kpi-value">{totalEdits.toLocaleString()}</p>
+        </article>
+        <article className="analytics-kpi-card">
+          <p className="analytics-kpi-label">Bot Percentage</p>
+          <p className="analytics-kpi-value">{botPercentage.toFixed(1)}%</p>
+        </article>
+        <article className="analytics-kpi-card">
+          <p className="analytics-kpi-label">Average Complexity</p>
+          <p className="analytics-kpi-value">{averageComplexity.toFixed(1)}</p>
+        </article>
+      </section>
+
+      <section className="analytics-filter-bar" aria-label="Filter controls">
+        <div className="analytics-filter-control">
+          <label htmlFor="analytics-timeframe">Timeframe</label>
+          <select
+            id="analytics-timeframe"
+            value={timeframe}
+            onChange={(event) => setTimeframe(event.target.value)}
+          >
+            <option value="">All Time</option>
+            <option value="1h">Last 1 Hour</option>
+            <option value="24h">Last 24 Hours</option>
+            <option value="7d">Last 7 Days</option>
+          </select>
+        </div>
+
+        <div className="analytics-filter-control">
+          <label htmlFor="analytics-bot-filter">Bot Status</label>
+          <select
+            id="analytics-bot-filter"
+            value={botFilterValue}
+            onChange={(event) => setIsBot(parseBotFilterValue(event.target.value))}
+          >
+            <option value="all">All</option>
+            <option value="bots">Bots Only</option>
+            <option value="humans">Humans Only</option>
+          </select>
+        </div>
+      </section>
 
       {error && (
         <section className="analytics-errors" aria-live="polite">
@@ -231,7 +334,7 @@ export default function AnalyticsOverviewTab() {
         <article className="analytics-card analytics-card-wide">
           <div className="analytics-card-head">
             <h3>Top 5 Languages</h3>
-            <p>Derived from Wikimedia server origin ({`serverUrl`}).</p>
+            <p>Derived from Wikimedia server origin (serverUrl).</p>
           </div>
           <div className="chart-frame chart-frame-bar">
             {loading && !hasLanguageData ? (
@@ -242,7 +345,11 @@ export default function AnalyticsOverviewTab() {
                   <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(70, 98, 91, 0.24)" />
                   <XAxis dataKey="language" tickLine={false} axisLine={false} />
                   <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                  <Tooltip />
+                  <Tooltip
+                    formatter={(value) => formatTooltipValue(value as TooltipValue)}
+                    contentStyle={TOOLTIP_CONTENT_STYLE}
+                    cursor={{ fill: 'rgba(15, 138, 100, 0.08)' }}
+                  />
                   <Bar dataKey="edits" fill="#0f8a64" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -275,8 +382,10 @@ export default function AnalyticsOverviewTab() {
                       <Cell key={entry.name} fill={BOT_SLICE_COLORS[index % BOT_SLICE_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip />
-                  <Legend />
+                  <Tooltip
+                    formatter={(value) => formatTooltipValue(value as TooltipValue)}
+                    contentStyle={TOOLTIP_CONTENT_STYLE}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
@@ -311,8 +420,10 @@ export default function AnalyticsOverviewTab() {
                       />
                     ))}
                   </Pie>
-                  <Tooltip />
-                  <Legend />
+                  <Tooltip
+                    formatter={(value) => formatTooltipValue(value as TooltipValue)}
+                    contentStyle={TOOLTIP_CONTENT_STYLE}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             ) : (

@@ -1092,3 +1092,101 @@ concerns with presentation concerns and risk losing source-level detail.
 - Mapping tables must be maintained when new canonical wiki hosts are required.
 - Grouping minor namespaces into `Other` intentionally reduces label
   granularity in this endpoint.
+
+---
+
+## ADR-036: Database-Parameterized Dynamic Analytics and KPI Snapshot Queries
+
+**Date**: 2026-04-06
+**Status**: Accepted
+
+### Context
+Phase 10 Tasks 2 and 3 require analytics endpoints to support optional
+time-window and bot filters while introducing dashboard KPI headline metrics.
+Current aggregation methods return unfiltered snapshots, which cannot answer
+queries such as "last 24h" or "bot-only" without additional processing.
+
+Filtering after loading large result sets into Java memory would increase query
+payload size, JVM memory pressure, and endpoint latency as data volume grows.
+This would duplicate aggregation logic across controller code paths and weaken
+the database-centric aggregation strategy established in ADR-032.
+
+### Decision
+1. Keep aggregation and filtering in PostgreSQL using parameterized JPQL
+   methods in `ProcessedEditRepository`.
+2. Extend analytics repository methods to accept optional filter parameters:
+   - `Instant since`
+   - `Boolean isBot`
+3. Apply null-tolerant JPQL predicates for reusable dynamic filtering:
+   - `(:since IS NULL OR p.editTimestamp >= :since)`
+   - `(:isBot IS NULL OR p.isBot = :isBot)`
+4. Introduce a new KPI snapshot read path exposed through
+   `GET /api/analytics/kpis` returning:
+   - `totalEdits`
+   - `botPercentage`
+   - `averageComplexity`
+5. Compute KPI values from aggregate repository results, with explicit
+   zero-safe handling when total edits are zero.
+
+### Rationale
+- Preserves database pushdown for filtering and grouping, minimizing row
+  transfer and JVM-side post-processing.
+- Scales better for high-volume event tables where timeframe filters are
+  expected to be a primary query dimension.
+- Keeps controller responsibilities focused on request parsing and response
+  composition rather than in-memory dataset filtering.
+- Enables consistent filter semantics across language, namespace, bot, and KPI
+  analytics endpoints.
+
+### Trade-offs
+- Repository query signatures become more complex due to optional parameters.
+- KPI calculations require explicit guardrails for divide-by-zero and null
+  aggregate handling.
+- Additional endpoint and DTO surface area must stay synchronized with frontend
+  contracts.
+
+---
+
+## ADR-037: Frontend Global State and Chart Polish
+
+**Date**: 2026-04-06
+**Status**: Accepted
+
+### Context
+Phase 11 requires a synchronized analytics experience where KPI cards and all
+charts respond to the same user-selected filters. If each visualization owns
+its own local filter state, data refreshes can drift and show mixed time or
+bot scopes in the same view.
+
+Namespace distribution can also contain many categories. Rendering a persistent
+PieChart legend for dense categorical datasets consumes horizontal space,
+causes wrapping in constrained layouts, and has previously destabilized card
+heights on smaller viewports.
+
+### Decision
+1. Lift analytics filter state to the top-level Analytics Overview tab using
+   shared `timeframe` and `isBot` state variables.
+2. Treat filter changes as a global rehydration trigger so KPI and chart
+   datasets are fetched with identical query parameters in the same cycle.
+3. Keep the filter controls colocated with the analytics header area so users
+   can clearly see and adjust active query scope.
+4. Remove the Namespace PieChart `<Legend>` and rely on a customized
+   `<Tooltip>` for value and label discovery on hover.
+
+### Rationale
+- A single source of truth for filters guarantees contract consistency across
+  KPI, language, namespace, and bot endpoints.
+- Coordinated fetch cycles avoid contradictory snapshots such as KPI values from
+  one timeframe while charts display another.
+- A tooltip-first strategy improves layout resilience for dense categories and
+  preserves chart area for data rather than chrome.
+- Keeping legend-free namespace visuals reduces UI breakage risk on responsive
+  widths while still preserving full value discoverability.
+
+### Trade-offs
+- Removing a static legend slightly reduces at-a-glance label visibility until
+  users hover slices.
+- Top-level filter state increases parent component responsibilities and should
+  remain narrowly scoped to analytics concerns.
+- Coordinated refetch on every filter change can increase request burstiness,
+  though payload sizes remain small and endpoint filters are database-side.
