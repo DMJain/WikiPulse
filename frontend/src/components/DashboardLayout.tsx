@@ -31,7 +31,7 @@ export default function DashboardLayout() {
     <section className="dashboard-shell">
       <header className="dashboard-header">
         <p className="dashboard-kicker">WikiPulse</p>
-        <h1>Phase 8 Analytics Console</h1>
+        <h1>WikiPulse Analytics Console</h1>
         <p className="dashboard-subtitle">
           Explore high-level analytics in one tab and keep live operational visibility in the other.
         </p>
