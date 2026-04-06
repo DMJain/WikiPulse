@@ -1036,3 +1036,59 @@ is required for deterministic demos and portfolio evaluation.
 - Reverse-proxy behavior must stay aligned with backend route contracts.
 - Local compose settings prioritize demo reliability over production ingress
   parity (TLS, WAF policies, and external load balancing remain out of scope).
+
+---
+
+## ADR-035: Read-Path Data Normalization for Analytics Presentation
+
+**Date**: 2026-04-06
+**Status**: Accepted
+
+### Context
+Phase 10 Task 1 requires analytics responses to be presentation-ready for the
+React dashboard while preserving the raw fidelity of ingested Wikimedia data.
+Current aggregation queries return raw `serverUrl` and numeric `namespace`
+values from PostgreSQL, which are accurate but not consistently readable in UI
+charts.
+
+The ingestion and persistence pipeline was intentionally designed to store raw
+stream attributes (`server_url`, `namespace`) for correctness and future
+analytics flexibility (ADR-031). Changing the write path would mix persistence
+concerns with presentation concerns and risk losing source-level detail.
+
+### Decision
+1. Keep the write path unchanged: producer mapping, Kafka transport, consumer
+  processing, and PostgreSQL storage remain raw and lossless.
+2. Introduce a dedicated API-layer normalization utility
+  (`WikiMetadataNormalizer`) on the read path to transform aggregate labels.
+3. Normalize language source labels in `/api/analytics/languages` with the
+  following mapping:
+  - `https://en.wikipedia.org` -> `English Wikipedia`
+  - `https://www.wikidata.org` -> `Wikidata`
+  - `https://commons.wikimedia.org` -> `Wikimedia Commons`
+  - Fallback: strip `https://` and return hostname.
+4. Normalize namespace labels in `/api/analytics/namespaces` with grouping to
+  avoid chart over-fragmentation:
+  - `0` -> `Article`
+  - `1` -> `Article Talk`
+  - `2` -> `User`
+  - `3` -> `User Talk`
+  - `4` -> `Project`
+  - Any other value -> `Other`
+5. After normalization, aggregate duplicate labels in the controller response
+  path (for example, all non-primary namespaces merged into `Other`).
+
+### Rationale
+- Preserves raw data fidelity in storage while still delivering clean labels to
+  consumers.
+- Concentrates presentation mapping in one backend utility instead of
+  duplicating rules in multiple frontend views.
+- Reduces namespace category noise so chart legends remain legible and stable.
+- Keeps architecture boundaries explicit: write path for durable truth, read
+  path for representation.
+
+### Trade-offs
+- Adds a lightweight transformation layer to analytics endpoints.
+- Mapping tables must be maintained when new canonical wiki hosts are required.
+- Grouping minor namespaces into `Other` intentionally reduces label
+  granularity in this endpoint.
