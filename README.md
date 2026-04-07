@@ -11,6 +11,15 @@
 
 WikiPulse V3 is a production-style streaming analytics platform that ingests live Wikipedia edits, processes them through a resilient Kafka pipeline, deduplicates and persists enriched events, and exposes both real-time and aggregate intelligence through a React dashboard. An elite deployment model encompasses an automated Zero-Touch SRE Observability Stack designed to visualize real-time dynamic scaling and cluster elasticity.
 
+## ✨ Core Platform Features
+
+- **Live Wikimedia Stream Ingestion**: Spring WebFlux consumes the public Wikimedia SSE firehose and publishes normalized events into Kafka for elastic downstream processing.
+- **Resilient Event Processing Pipeline**: Virtual-thread worker consumers process Kafka partitions concurrently with Redis-backed deduplication to suppress replay noise.
+- **Enrichment and Analytics Persistence**: Every processed edit is enriched (including bot-aware signals and complexity metadata) before durable storage in PostgreSQL.
+- **Materialized Rollups & Background Aggregation**: A `@Scheduled` background engine pre-aggregates Wikipedia edits into 10-minute buckets to enable lightning-fast React charting without hammering the raw event table.
+- **Hybrid KPI Query Strategy**: Dashboard count metrics are optimized through rollup reads, while fidelity-sensitive complexity analytics are derived from raw processed-edit records.
+- **Production Observability by Default**: Prometheus and Grafana provide live visibility into ingestion rate, worker saturation, consumer lag, and scaling behavior.
+
 ## 🚀 Zero-Touch Quick Start
 
 Spin up the entire distributed system (Frontend, Backend Worker, Kafka cluster, PostgreSQL, Redis, Prometheus, and Grafana) locally with a single command.
@@ -43,6 +52,16 @@ When reviewing the system, examine the Grafana dashboard panels collectively:
 
 This establishes visual proof of our **Elastic Scaling Strategy** maintaining stream-processing integrity!
 
+## 🎛️ Interactive Dashboard With Dynamic Filtering
+
+The React analytics workspace keeps KPI cards and charts synchronized through composable runtime filters:
+
+- **Timeframe Filter**: Slice analytics windows across all time, last 1 hour, last 24 hours, or last 7 days.
+- **Bot Status Filter**: Isolate bot-only activity, human-only activity, or blended traffic.
+- **Project Filter**: Scope analytics to **Wikipedia**, **Wikidata**, or **Wikimedia Commons** for project-specific trend analysis.
+
+WikiPulse applies a **Hybrid KPI** strategy so the UI remains fast and analytically faithful: edit counts are fetched from materialized rollups, while average complexity is calculated from raw processed-edit tables.
+
 ---
 
 ## 🏗️ Architecture Blueprint
@@ -55,7 +74,10 @@ flowchart LR
     D --> E[Worker Consumer]
 
     E --> F[Redis 24h SETNX Dedup]
-    F --> G[PostgreSQL Analytics Store]
+    F --> G[PostgreSQL Analytics Store (Raw Events)]
+    G --> M[Rollup Cron Job (@Scheduled every 10m)]
+    M --> N[PostgreSQL Analytics Store (Materialized Rollups)]
+    N --> J[API Layer (REST and STOMP)]
 
     E --> H[Prometheus Metrics Scraping]
     H --> I[Grafana Dashboards]
