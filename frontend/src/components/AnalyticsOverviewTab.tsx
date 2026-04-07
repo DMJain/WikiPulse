@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -15,11 +17,13 @@ import {
   fetchBotDistribution,
   fetchKpis,
   fetchNamespaceDistribution,
+  fetchTrendData,
   fetchTopLanguages,
   type BotCount,
   type KpiSnapshot,
   type LanguageCount,
   type NamespaceCount,
+  type TrendBucket,
 } from '../services/api';
 import './AnalyticsOverviewTab.css';
 
@@ -158,13 +162,36 @@ function formatUpdatedAt(timestamp: string | null): string {
   return date.toLocaleTimeString();
 }
 
+function formatTrendBucketTick(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatTrendBucketLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+}
+
 export default function AnalyticsOverviewTab() {
   const [kpis, setKpis] = useState<KpiSnapshot | null>(null);
   const [languageBreakdown, setLanguageBreakdown] = useState<LanguageCount[]>([]);
   const [namespaceBreakdown, setNamespaceBreakdown] = useState<NamespaceCount[]>([]);
   const [botBreakdown, setBotBreakdown] = useState<BotCount[]>([]);
+  const [trendData, setTrendData] = useState<TrendBucket[]>([]);
   const [timeframe, setTimeframe] = useState('');
   const [isBot, setIsBot] = useState<boolean | null>(null);
+  const [project, setProject] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
@@ -173,6 +200,7 @@ export default function AnalyticsOverviewTab() {
     let cancelled = false;
     const selectedTimeframe = timeframe || undefined;
     const selectedBotFilter = isBot ?? undefined;
+    const selectedProject = project === 'all' ? undefined : project;
 
     const loadAnalytics = async () => {
       if (!cancelled) {
@@ -180,11 +208,12 @@ export default function AnalyticsOverviewTab() {
       }
 
       try {
-        const [kpiSnapshot, languages, namespaces, bots] = await Promise.all([
-          fetchKpis(selectedTimeframe, selectedBotFilter),
-          fetchTopLanguages(5, selectedTimeframe, selectedBotFilter),
-          fetchNamespaceDistribution(selectedTimeframe, selectedBotFilter),
-          fetchBotDistribution(selectedTimeframe, selectedBotFilter),
+        const [kpiSnapshot, languages, namespaces, bots, trendBuckets] = await Promise.all([
+          fetchKpis(selectedTimeframe, selectedBotFilter, selectedProject),
+          fetchTopLanguages(5, selectedTimeframe, selectedBotFilter, selectedProject),
+          fetchNamespaceDistribution(selectedTimeframe, selectedBotFilter, selectedProject),
+          fetchBotDistribution(selectedTimeframe, selectedBotFilter, selectedProject),
+          fetchTrendData(selectedTimeframe, selectedBotFilter, selectedProject),
         ]);
 
         if (cancelled) {
@@ -195,6 +224,7 @@ export default function AnalyticsOverviewTab() {
         setLanguageBreakdown(languages);
         setNamespaceBreakdown(namespaces);
         setBotBreakdown(bots);
+        setTrendData(trendBuckets);
         setError(null);
         setLastUpdatedAt(new Date().toISOString());
       } catch {
@@ -218,7 +248,7 @@ export default function AnalyticsOverviewTab() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [timeframe, isBot]);
+  }, [timeframe, isBot, project]);
 
   const topLanguageData = useMemo<LanguageChartDatum[]>(
     () =>
@@ -261,6 +291,7 @@ export default function AnalyticsOverviewTab() {
   const hasLanguageData = topLanguageData.length > 0;
   const hasBotData = botDistributionData.some((entry) => entry.value > 0);
   const hasNamespaceData = namespaceDistributionData.length > 0;
+  const hasTrendData = trendData.length > 0;
   const totalEdits = kpis?.totalEdits ?? 0;
   const botPercentage = kpis?.botPercentage ?? 0;
   const averageComplexity = kpis?.averageComplexity ?? 0;
@@ -273,8 +304,8 @@ export default function AnalyticsOverviewTab() {
           <p className="analytics-kicker">Analytics Overview</p>
           <h2>Aggregated Insights (Dynamic Filters + KPI Cards)</h2>
           <p>
-            Metrics and charts stay in sync with timeframe and bot-status filters, refreshing every 10
-            seconds.
+            Metrics and charts stay in sync with timeframe, bot-status, and project filters,
+            refreshing every 10 seconds.
           </p>
         </div>
         <div className="analytics-refresh-pill">Last updated: {formatUpdatedAt(lastUpdatedAt)}</div>
@@ -320,6 +351,20 @@ export default function AnalyticsOverviewTab() {
             <option value="all">All</option>
             <option value="bots">Bots Only</option>
             <option value="humans">Humans Only</option>
+          </select>
+        </div>
+
+        <div className="analytics-filter-control">
+          <label htmlFor="analytics-project-filter">Project Filter</label>
+          <select
+            id="analytics-project-filter"
+            value={project}
+            onChange={(event) => setProject(event.target.value)}
+          >
+            <option value="all">All</option>
+            <option value="wikipedia">Wikipedia</option>
+            <option value="wikimedia-commons">Wikimedia Commons</option>
+            <option value="wikidata">Wikidata</option>
           </select>
         </div>
       </section>
@@ -428,6 +473,65 @@ export default function AnalyticsOverviewTab() {
               </ResponsiveContainer>
             ) : (
               <div className="chart-empty">No namespace data yet.</div>
+            )}
+          </div>
+        </article>
+
+        <article className="analytics-card analytics-card-wide">
+          <div className="analytics-card-head">
+            <h3>Edit Volume over Time</h3>
+            <p>Trend rollups from /api/analytics/trend.</p>
+          </div>
+          <div className="chart-frame chart-frame-area">
+            {loading && !hasTrendData ? (
+              <div className="chart-empty">Loading chart...</div>
+            ) : hasTrendData ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
+                  <defs>
+                    <linearGradient id="trendTotalGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0f8a64" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#0f8a64" stopOpacity={0.05} />
+                    </linearGradient>
+                    <linearGradient id="trendBotGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ca8a04" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#ca8a04" stopOpacity={0.04} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(70, 98, 91, 0.24)" />
+                  <XAxis
+                    dataKey="timeBucket"
+                    tickFormatter={(value) => formatTrendBucketTick(String(value))}
+                    minTickGap={24}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                  <Tooltip
+                    labelFormatter={(value) => formatTrendBucketLabel(String(value))}
+                    formatter={(value) => formatTooltipValue(value as TooltipValue)}
+                    contentStyle={TOOLTIP_CONTENT_STYLE}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="totalEdits"
+                    name="Total Edits"
+                    stroke="#0f8a64"
+                    strokeWidth={2}
+                    fill="url(#trendTotalGradient)"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="botEdits"
+                    name="Bot Edits"
+                    stroke="#ca8a04"
+                    strokeWidth={2}
+                    fill="url(#trendBotGradient)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="chart-empty">No trend data yet.</div>
             )}
           </div>
         </article>

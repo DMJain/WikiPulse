@@ -37,6 +37,14 @@ public interface ProcessedEditRepository extends JpaRepository<ProcessedEdit, Lo
     Double getAverageComplexity();
   }
 
+  interface ComplexityByServerUrl {
+    String getServerUrl();
+
+    Long getCount();
+
+    Double getAverageComplexity();
+  }
+
   List<ProcessedEdit> findByOrderByEditTimestampDesc(Pageable pageable);
 
   List<ProcessedEdit> findByEditTimestampGreaterThanEqualAndEditTimestampLessThan(
@@ -135,6 +143,32 @@ public interface ProcessedEditRepository extends JpaRepository<ProcessedEdit, Lo
         and (:applyIsBot = false or p.isBot = :isBotValue)
       """)
   KpiSnapshot getKpiSnapshotInternal(
+      @Param("applySince") boolean applySince,
+      @Param("since") Instant since,
+      @Param("applyIsBot") boolean applyIsBot,
+      @Param("isBotValue") boolean isBotValue);
+
+  default List<ComplexityByServerUrl> findComplexityByServerUrl(Instant since, Boolean isBot) {
+    return findComplexityByServerUrlInternal(
+        since != null,
+        since != null ? since : Instant.EPOCH,
+        isBot != null,
+        Boolean.TRUE.equals(isBot));
+  }
+
+  @Query(
+      """
+      select p.serverUrl as serverUrl,
+             count(p) as count,
+             coalesce(avg(p.complexityScore), 0.0) as averageComplexity
+      from ProcessedEdit p
+      where p.serverUrl is not null
+        and p.serverUrl <> ''
+        and (:applySince = false or p.editTimestamp >= :since)
+        and (:applyIsBot = false or p.isBot = :isBotValue)
+      group by p.serverUrl
+      """)
+  List<ComplexityByServerUrl> findComplexityByServerUrlInternal(
       @Param("applySince") boolean applySince,
       @Param("since") Instant since,
       @Param("applyIsBot") boolean applyIsBot,

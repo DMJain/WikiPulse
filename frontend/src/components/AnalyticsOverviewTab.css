@@ -170,6 +170,10 @@
   min-height: 285px;
 }
 
+.chart-frame-area {
+  min-height: 310px;
+}
+
 .chart-empty {
   height: 100%;
   min-height: 220px;

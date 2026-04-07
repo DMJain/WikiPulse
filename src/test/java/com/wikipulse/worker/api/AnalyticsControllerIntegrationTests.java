@@ -5,9 +5,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.wikipulse.worker.domain.AnalyticsRollup;
+import com.wikipulse.worker.domain.AnalyticsRollupRepository;
 import com.wikipulse.worker.domain.ProcessedEdit;
 import com.wikipulse.worker.domain.ProcessedEditRepository;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,12 +47,29 @@ class AnalyticsControllerIntegrationTests {
 
   @Autowired private MockMvc mockMvc;
 
+  @Autowired private AnalyticsRollupRepository analyticsRollupRepository;
+
   @Autowired private ProcessedEditRepository processedEditRepository;
 
   @BeforeEach
   void setUp() {
+    analyticsRollupRepository.deleteAllInBatch();
+    analyticsRollupRepository.flush();
     processedEditRepository.deleteAllInBatch();
     processedEditRepository.flush();
+
+    Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+    Instant bucketOne = now.minusSeconds(600);
+    Instant bucketTwo = now.minusSeconds(300);
+
+    analyticsRollupRepository.saveAllAndFlush(
+        List.of(
+            buildRollup(bucketOne, "English", "Article", 10L, 3L),
+            buildRollup(bucketOne, "Wikidata", "User", 4L, 4L),
+            buildRollup(bucketOne, "Wikimedia Commons", "Article Talk", 5L, 1L),
+            buildRollup(bucketTwo, "English", "Article", 12L, 2L),
+            buildRollup(bucketTwo, "Unknown", "Other", 2L, 0L),
+            buildRollup(bucketTwo, "Wikimedia Commons", "Article", 3L, 1L)));
 
     processedEditRepository.saveAllAndFlush(
       List.of(
@@ -93,6 +113,17 @@ class AnalyticsControllerIntegrationTests {
         .andExpect(content().contentTypeCompatibleWith("application/json"))
         .andExpect(jsonPath("$").isArray())
         .andExpect(jsonPath("$[0].serverUrl").exists())
+        .andExpect(jsonPath("$[0].count").exists());
+  }
+
+  @Test
+  void shouldApplyProjectFilterForLanguagesEndpoint() throws Exception {
+    mockMvc
+        .perform(get("/api/analytics/languages").param("project", "wikidata"))
+        .andExpect(status().isOk())
+        .andExpect(content().contentTypeCompatibleWith("application/json"))
+        .andExpect(jsonPath("$").isArray())
+        .andExpect(jsonPath("$[0].serverUrl").value("Wikidata"))
         .andExpect(jsonPath("$[0].count").exists());
   }
 
@@ -151,5 +182,16 @@ class AnalyticsControllerIntegrationTests {
     edit.setEditTimestamp(editTimestamp);
     edit.setEventType("edit");
     return edit;
+  }
+
+  private static AnalyticsRollup buildRollup(
+      Instant timeBucket, String language, String namespace, Long totalEdits, Long botEdits) {
+    AnalyticsRollup rollup = new AnalyticsRollup();
+    rollup.setTimeBucket(timeBucket);
+    rollup.setLanguage(language);
+    rollup.setNamespace(namespace);
+    rollup.setTotalEdits(totalEdits);
+    rollup.setBotEdits(botEdits);
+    return rollup;
   }
 }

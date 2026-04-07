@@ -5,6 +5,8 @@ import com.wikipulse.worker.api.dto.EditUpdateDto;
 import com.wikipulse.worker.api.dto.KpiDto;
 import com.wikipulse.worker.api.dto.LanguageCountDto;
 import com.wikipulse.worker.api.dto.NamespaceCountDto;
+import com.wikipulse.worker.api.dto.TrendBucketDto;
+import com.wikipulse.worker.domain.AnalyticsRollupRepository;
 import com.wikipulse.worker.domain.ProcessedEditRepository;
 import com.wikipulse.worker.util.WikiMetadataNormalizer;
 import java.time.Duration;
@@ -12,8 +14,6 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -32,14 +32,20 @@ public class AnalyticsController {
   private static final int MAX_LIMIT = 200;
   private static final int DEFAULT_LANGUAGE_LIMIT = 5;
   private static final int MAX_LANGUAGE_LIMIT = 10;
+  private static final String COMMONS_LANGUAGE = "Wikimedia Commons";
+  private static final String WIKIDATA_LANGUAGE = "Wikidata";
+  private static final String UNKNOWN_LANGUAGE = "Unknown";
 
   private final ProcessedEditRepository processedEditRepository;
+  private final AnalyticsRollupRepository analyticsRollupRepository;
   private final WikiMetadataNormalizer wikiMetadataNormalizer;
 
   public AnalyticsController(
       ProcessedEditRepository processedEditRepository,
+      AnalyticsRollupRepository analyticsRollupRepository,
       WikiMetadataNormalizer wikiMetadataNormalizer) {
     this.processedEditRepository = processedEditRepository;
+    this.analyticsRollupRepository = analyticsRollupRepository;
     this.wikiMetadataNormalizer = wikiMetadataNormalizer;
   }
 
@@ -62,78 +68,233 @@ public class AnalyticsController {
   public List<LanguageCountDto> topLanguages(
       @RequestParam(name = "limit", defaultValue = "5") int limit,
       @RequestParam(required = false) String timeframe,
-      @RequestParam(required = false) Boolean isBot) {
+      @RequestParam(required = false) Boolean isBot,
+      @RequestParam(required = false) String project) {
     int boundedLimit = Math.max(1, Math.min(limit, MAX_LANGUAGE_LIMIT));
     if (limit <= 0) {
       boundedLimit = DEFAULT_LANGUAGE_LIMIT;
     }
 
     Instant since = parseSince(timeframe);
+    ProjectScope projectScope = parseProject(project);
+    ProjectQuery projectQuery = toProjectQuery(projectScope);
 
-    Map<String, Long> normalizedLanguageCounts =
-        processedEditRepository.findTopLanguages(PageRequest.of(0, boundedLimit), since, isBot).stream()
-            .collect(
-                Collectors.groupingBy(
-                    result -> wikiMetadataNormalizer.normalizeServerUrl(result.getServerUrl()),
-                    Collectors.summingLong(result -> safeCount(result.getCount()))));
-
-    return normalizedLanguageCounts.entrySet().stream()
+    return analyticsRollupRepository
+        .findLanguageRollups(
+            since,
+            projectQuery.applyExactLanguage(),
+            projectQuery.exactLanguage(),
+            projectQuery.applyWikipedia())
+        .stream()
+        .map(
+            result ->
+                new LanguageCountDto(
+                    result.getLanguage(),
+                    editsForBotFilter(result.getTotalEdits(), result.getBotEdits(), isBot)))
+        .filter(entry -> safeCount(entry.count()) > 0L)
         .sorted(
-            Map.Entry.<String, Long>comparingByValue(Comparator.reverseOrder())
-                .thenComparing(Map.Entry.comparingByKey()))
+            Comparator.comparing(LanguageCountDto::count, Comparator.reverseOrder())
+                .thenComparing(LanguageCountDto::serverUrl))
         .limit(boundedLimit)
-        .map(entry -> new LanguageCountDto(entry.getKey(), entry.getValue()))
         .toList();
   }
 
   @GetMapping("/analytics/namespaces")
   public List<NamespaceCountDto> namespaceBreakdown(
       @RequestParam(required = false) String timeframe,
-      @RequestParam(required = false) Boolean isBot) {
+      @RequestParam(required = false) Boolean isBot,
+      @RequestParam(required = false) String project) {
     Instant since = parseSince(timeframe);
+    ProjectScope projectScope = parseProject(project);
+    ProjectQuery projectQuery = toProjectQuery(projectScope);
 
-    Map<String, Long> normalizedNamespaceCounts =
-        processedEditRepository.findNamespaceBreakdown(since, isBot).stream()
-            .collect(
-                Collectors.groupingBy(
-                    result -> wikiMetadataNormalizer.normalizeNamespace(result.getNamespace()),
-                    Collectors.summingLong(result -> safeCount(result.getCount()))));
-
-    return normalizedNamespaceCounts.entrySet().stream()
+    return analyticsRollupRepository
+        .findNamespaceRollups(
+            since,
+            projectQuery.applyExactLanguage(),
+            projectQuery.exactLanguage(),
+            projectQuery.applyWikipedia())
+        .stream()
+        .map(
+            result ->
+                new NamespaceCountDto(
+                    result.getNamespace(),
+                    editsForBotFilter(result.getTotalEdits(), result.getBotEdits(), isBot)))
+        .filter(entry -> safeCount(entry.count()) > 0L)
         .sorted(
-            Map.Entry.<String, Long>comparingByValue(Comparator.reverseOrder())
-                .thenComparing(Map.Entry.comparingByKey()))
-        .map(entry -> new NamespaceCountDto(entry.getKey(), entry.getValue()))
+            Comparator.comparing(NamespaceCountDto::count, Comparator.reverseOrder())
+                .thenComparing(NamespaceCountDto::namespace))
         .toList();
   }
 
   @GetMapping("/analytics/bots")
   public List<BotCountDto> botVsHumanBreakdown(
       @RequestParam(required = false) String timeframe,
-      @RequestParam(required = false) Boolean isBot) {
+      @RequestParam(required = false) Boolean isBot,
+      @RequestParam(required = false) String project) {
     Instant since = parseSince(timeframe);
+    ProjectScope projectScope = parseProject(project);
+    ProjectQuery projectQuery = toProjectQuery(projectScope);
 
-    return processedEditRepository.findBotVsHumanBreakdown(since, isBot).stream()
-        .map(result -> new BotCountDto(result.getIsBot(), result.getCount()))
+    AnalyticsRollupRepository.RollupTotals totals =
+        analyticsRollupRepository.getRollupTotals(
+            since,
+            projectQuery.applyExactLanguage(),
+            projectQuery.exactLanguage(),
+            projectQuery.applyWikipedia());
+
+    long totalEdits = safeCount(totals == null ? null : totals.getTotalEdits());
+    long botEdits = safeCount(totals == null ? null : totals.getBotEdits());
+    long humanEdits = Math.max(0L, totalEdits - botEdits);
+
+    if (Boolean.TRUE.equals(isBot)) {
+      return botEdits > 0L ? List.of(new BotCountDto(true, botEdits)) : List.of();
+    }
+
+    if (Boolean.FALSE.equals(isBot)) {
+      return humanEdits > 0L ? List.of(new BotCountDto(false, humanEdits)) : List.of();
+    }
+
+    return List.of(new BotCountDto(true, botEdits), new BotCountDto(false, humanEdits)).stream()
+        .filter(entry -> safeCount(entry.count()) > 0L)
+        .sorted(Comparator.comparing(BotCountDto::count, Comparator.reverseOrder()))
         .toList();
   }
 
   @GetMapping("/analytics/kpis")
   public KpiDto kpiSnapshot(
       @RequestParam(required = false) String timeframe,
-      @RequestParam(required = false) Boolean isBot) {
+      @RequestParam(required = false) Boolean isBot,
+      @RequestParam(required = false) String project) {
     Instant since = parseSince(timeframe);
-    ProcessedEditRepository.KpiSnapshot snapshot = processedEditRepository.getKpiSnapshot(since, isBot);
+    ProjectScope projectScope = parseProject(project);
+    ProjectQuery projectQuery = toProjectQuery(projectScope);
 
-    long totalEdits = safeCount(snapshot == null ? null : snapshot.getTotalEdits());
-    long botEdits = safeCount(snapshot == null ? null : snapshot.getBotEdits());
-    double averageComplexity =
-        snapshot == null || snapshot.getAverageComplexity() == null
-            ? 0.0
-            : snapshot.getAverageComplexity();
-    double botPercentage = totalEdits == 0 ? 0.0 : (botEdits * 100.0) / totalEdits;
+    AnalyticsRollupRepository.RollupTotals totals =
+        analyticsRollupRepository.getRollupTotals(
+            since,
+            projectQuery.applyExactLanguage(),
+            projectQuery.exactLanguage(),
+            projectQuery.applyWikipedia());
 
-    return new KpiDto(totalEdits, botPercentage, averageComplexity);
+    long totalEdits = safeCount(totals == null ? null : totals.getTotalEdits());
+    long botEdits = safeCount(totals == null ? null : totals.getBotEdits());
+    long filteredTotalEdits = editsForBotFilter(totalEdits, botEdits, isBot);
+    long filteredBotEdits =
+        Boolean.TRUE.equals(isBot) ? filteredTotalEdits : Boolean.FALSE.equals(isBot) ? 0L : botEdits;
+    double averageComplexity = calculateAverageComplexity(since, isBot, projectScope);
+    double botPercentage =
+        filteredTotalEdits == 0 ? 0.0 : (filteredBotEdits * 100.0) / filteredTotalEdits;
+
+    return new KpiDto(filteredTotalEdits, botPercentage, averageComplexity);
+  }
+
+  @GetMapping("/analytics/trend")
+  public List<TrendBucketDto> trend(
+      @RequestParam(required = false) String timeframe,
+      @RequestParam(required = false) Boolean isBot,
+      @RequestParam(required = false) String project) {
+    Instant since = parseSince(timeframe);
+    ProjectScope projectScope = parseProject(project);
+    ProjectQuery projectQuery = toProjectQuery(projectScope);
+
+    return analyticsRollupRepository
+        .findTrendRollups(
+            since,
+            projectQuery.applyExactLanguage(),
+            projectQuery.exactLanguage(),
+            projectQuery.applyWikipedia())
+        .stream()
+        .map(
+            result -> {
+              long totalEdits = editsForBotFilter(result.getTotalEdits(), result.getBotEdits(), isBot);
+              long botEdits =
+                  Boolean.TRUE.equals(isBot)
+                      ? totalEdits
+                      : Boolean.FALSE.equals(isBot) ? 0L : safeCount(result.getBotEdits());
+              return new TrendBucketDto(result.getTimeBucket(), totalEdits, botEdits);
+            })
+        .filter(entry -> entry.totalEdits() > 0L)
+        .toList();
+  }
+
+  private double calculateAverageComplexity(Instant since, Boolean isBot, ProjectScope projectScope) {
+    List<ProcessedEditRepository.ComplexityByServerUrl> buckets =
+        processedEditRepository.findComplexityByServerUrl(since, isBot);
+
+    double weightedComplexity = 0.0;
+    long totalCount = 0L;
+    for (ProcessedEditRepository.ComplexityByServerUrl bucket : buckets) {
+      String normalizedLanguage = wikiMetadataNormalizer.normalizeServerUrl(bucket.getServerUrl());
+      if (!matchesProject(normalizedLanguage, projectScope)) {
+        continue;
+      }
+
+      long count = safeCount(bucket.getCount());
+      if (count <= 0L) {
+        continue;
+      }
+
+      double averageComplexity =
+          bucket.getAverageComplexity() == null ? 0.0 : bucket.getAverageComplexity();
+      weightedComplexity += averageComplexity * count;
+      totalCount += count;
+    }
+
+    return totalCount == 0L ? 0.0 : weightedComplexity / totalCount;
+  }
+
+  private static long editsForBotFilter(Long totalEdits, Long botEdits, Boolean isBot) {
+    long safeTotalEdits = safeCount(totalEdits);
+    long safeBotEdits = safeCount(botEdits);
+    long safeHumanEdits = Math.max(0L, safeTotalEdits - safeBotEdits);
+
+    if (Boolean.TRUE.equals(isBot)) {
+      return safeBotEdits;
+    }
+
+    if (Boolean.FALSE.equals(isBot)) {
+      return safeHumanEdits;
+    }
+
+    return safeTotalEdits;
+  }
+
+  private static ProjectQuery toProjectQuery(ProjectScope projectScope) {
+    return switch (projectScope) {
+      case ALL -> new ProjectQuery(false, "", false);
+      case WIKIMEDIA_COMMONS -> new ProjectQuery(true, COMMONS_LANGUAGE, false);
+      case WIKIDATA -> new ProjectQuery(true, WIKIDATA_LANGUAGE, false);
+      case WIKIPEDIA -> new ProjectQuery(false, "", true);
+    };
+  }
+
+  private static boolean matchesProject(String normalizedLanguage, ProjectScope projectScope) {
+    return switch (projectScope) {
+      case ALL -> true;
+      case WIKIMEDIA_COMMONS -> COMMONS_LANGUAGE.equals(normalizedLanguage);
+      case WIKIDATA -> WIKIDATA_LANGUAGE.equals(normalizedLanguage);
+      case WIKIPEDIA ->
+          !WIKIDATA_LANGUAGE.equals(normalizedLanguage)
+              && !COMMONS_LANGUAGE.equals(normalizedLanguage)
+              && !UNKNOWN_LANGUAGE.equals(normalizedLanguage);
+    };
+  }
+
+  private static ProjectScope parseProject(String project) {
+    if (project == null || project.isBlank()) {
+      return ProjectScope.ALL;
+    }
+
+    String normalizedProject = project.trim().toLowerCase(Locale.ROOT);
+    return switch (normalizedProject) {
+      case "all" -> ProjectScope.ALL;
+      case "wikipedia" -> ProjectScope.WIKIPEDIA;
+      case "wikimedia commons", "wikimedia-commons", "wikimedia_commons", "commons" ->
+          ProjectScope.WIKIMEDIA_COMMONS;
+      case "wikidata" -> ProjectScope.WIKIDATA;
+      default -> throw invalidProject(project);
+    };
   }
 
   private static Instant parseSince(String timeframe) {
@@ -178,7 +339,24 @@ public class AnalyticsController {
             + "'. Supported format examples: 1h, 24h, 7d.");
   }
 
+  private static ResponseStatusException invalidProject(String project) {
+    return new ResponseStatusException(
+        HttpStatus.BAD_REQUEST,
+        "Invalid project '"
+            + project
+            + "'. Supported values: all, wikipedia, wikimedia-commons, wikidata.");
+  }
+
   private static long safeCount(Long count) {
     return count == null ? 0L : count;
   }
+
+  private enum ProjectScope {
+    ALL,
+    WIKIPEDIA,
+    WIKIMEDIA_COMMONS,
+    WIKIDATA
+  }
+
+  private record ProjectQuery(boolean applyExactLanguage, String exactLanguage, boolean applyWikipedia) {}
 }

@@ -24,9 +24,16 @@ export interface KpiSnapshot {
   averageComplexity: number;
 }
 
+export interface TrendBucket {
+  timeBucket: string;
+  totalEdits: number;
+  botEdits: number;
+}
+
 interface AnalyticsFilters {
   timeframe?: string;
   isBot?: boolean;
+  project?: string;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
@@ -36,10 +43,11 @@ const http = axios.create({
   timeout: 10000,
 });
 
-function buildAnalyticsParams(timeframe?: string, isBot?: boolean): AnalyticsFilters {
+function buildAnalyticsParams(timeframe?: string, isBot?: boolean, project?: string): AnalyticsFilters {
   return {
     ...(timeframe ? { timeframe } : {}),
     ...(typeof isBot === 'boolean' ? { isBot } : {}),
+    ...(project ? { project } : {}),
   };
 }
 
@@ -55,11 +63,12 @@ export async function fetchTopLanguages(
   limit = 5,
   timeframe?: string,
   isBot?: boolean,
+  project?: string,
 ): Promise<LanguageCount[]> {
   const response = await http.get<LanguageCount[]>('/api/analytics/languages', {
     params: {
       limit,
-      ...buildAnalyticsParams(timeframe, isBot),
+      ...buildAnalyticsParams(timeframe, isBot, project),
     },
   });
 
@@ -69,25 +78,46 @@ export async function fetchTopLanguages(
 export async function fetchNamespaceDistribution(
   timeframe?: string,
   isBot?: boolean,
+  project?: string,
 ): Promise<NamespaceCount[]> {
   const response = await http.get<NamespaceCount[]>('/api/analytics/namespaces', {
-    params: buildAnalyticsParams(timeframe, isBot),
+    params: buildAnalyticsParams(timeframe, isBot, project),
   });
 
   return response.data;
 }
 
-export async function fetchBotDistribution(timeframe?: string, isBot?: boolean): Promise<BotCount[]> {
+export async function fetchBotDistribution(
+  timeframe?: string,
+  isBot?: boolean,
+  project?: string,
+): Promise<BotCount[]> {
   const response = await http.get<BotCount[]>('/api/analytics/bots', {
-    params: buildAnalyticsParams(timeframe, isBot),
+    params: buildAnalyticsParams(timeframe, isBot, project),
   });
 
   return response.data;
 }
 
-export async function fetchKpis(timeframe?: string, isBot?: boolean): Promise<KpiSnapshot> {
+export async function fetchKpis(
+  timeframe?: string,
+  isBot?: boolean,
+  project?: string,
+): Promise<KpiSnapshot> {
   const response = await http.get<KpiSnapshot>('/api/analytics/kpis', {
-    params: buildAnalyticsParams(timeframe, isBot),
+    params: buildAnalyticsParams(timeframe, isBot, project),
+  });
+
+  return response.data;
+}
+
+export async function fetchTrendData(
+  timeframe?: string,
+  isBot?: boolean,
+  project?: string,
+): Promise<TrendBucket[]> {
+  const response = await http.get<TrendBucket[]>('/api/analytics/trend', {
+    params: buildAnalyticsParams(timeframe, isBot, project),
   });
 
   return response.data;
