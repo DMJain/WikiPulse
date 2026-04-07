@@ -56,6 +56,10 @@ management:
   endpoint:
     prometheus:
       enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
   metrics:
     export:
       prometheus:

@@ -1,6 +1,7 @@
 package com.wikipulse.worker.config;
 
 import com.wikipulse.producer.domain.WikiEditEvent;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -14,6 +15,7 @@ import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.MicrometerConsumerListener;
 import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.ContainerProperties;
@@ -27,7 +29,9 @@ import org.springframework.util.backoff.FixedBackOff;
 public class KafkaConsumerConfig {
 
     @Bean
-    public ConsumerFactory<String, WikiEditEvent> consumerFactory(KafkaProperties kafkaProperties) {
+    public ConsumerFactory<String, WikiEditEvent> consumerFactory(
+            KafkaProperties kafkaProperties,
+            MeterRegistry meterRegistry) {
         Map<String, Object> props = kafkaProperties.buildConsumerProperties(null);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
@@ -36,7 +40,10 @@ public class KafkaConsumerConfig {
         props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, WikiEditEvent.class.getName());
         props.put(JsonDeserializer.TRUSTED_PACKAGES, "*");
 
-        return new DefaultKafkaConsumerFactory<>(props);
+        DefaultKafkaConsumerFactory<String, WikiEditEvent> consumerFactory =
+                new DefaultKafkaConsumerFactory<>(props);
+        consumerFactory.addListener(new MicrometerConsumerListener<>(meterRegistry));
+        return consumerFactory;
     }
 
     @Bean
@@ -48,6 +55,7 @@ public class KafkaConsumerConfig {
         factory.setConsumerFactory(consumerFactory);
         factory.setCommonErrorHandler(errorHandler);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        factory.getContainerProperties().setObservationEnabled(true);
         return factory;
     }
 

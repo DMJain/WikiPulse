@@ -1190,3 +1190,54 @@ heights on smaller viewports.
   remain narrowly scoped to analytics concerns.
 - Coordinated refetch on every filter change can increase request burstiness,
   though payload sizes remain small and endpoint filters are database-side.
+
+---
+
+## ADR-038: Deep Telemetry and Local Scaling Visibility
+
+**Date**: 2026-04-07
+**Status**: Accepted
+
+### Context
+Phase 16 requires end-to-end observability of both application behavior and
+container runtime scaling characteristics in local Docker. Existing telemetry
+covered Spring and Kafka listener timers, but did not include container-level
+worker visibility from cAdvisor in Prometheus/Grafana.
+
+### Decision
+1. Add `cadvisor` to local orchestration using
+   `gcr.io/cadvisor/cadvisor:latest` with read-only mounts for
+   `/var/run/docker.sock`, `/sys`, and `/var/lib/docker`.
+2. Extend Prometheus scrape configuration with a dedicated `cadvisor` job at
+   5-second interval targeting `cadvisor:8080`.
+3. Enable Spring Kafka listener observation on the explicit
+   `ConcurrentKafkaListenerContainerFactory` and bind consumer-client metrics
+   via `MicrometerConsumerListener` so Prometheus exports
+   `kafka_consumer_fetch_manager_records_lag`.
+4. Update dashboards as code:
+   - Active Worker Nodes uses
+     `count(container_last_seen{name=~".*wikipulse-worker.*"})`.
+   - Kafka Consumer Lag uses
+     `sum(kafka_consumer_fetch_manager_records_lag{job="wikipulse-worker"})`.
+5. Add a robust integration test that boots with Testcontainers
+   (Kafka/PostgreSQL/Redis), publishes a `WikiEditEvent`, waits for consumer
+   processing with `await().atMost(5, SECONDS)`, calls
+   `/actuator/prometheus`, and asserts presence of
+   `kafka_consumer_fetch_manager_records_lag`.
+
+### Rationale
+- Creates a single telemetry chain from container runtime to application
+  consumer internals, enabling faster scale diagnosis.
+- Keeps telemetry verification deterministic and codified in CI through a
+  true integration test.
+- Preserves dashboards-as-code parity with the specified Phase 16 PromQL
+  contracts.
+
+### Trade-offs
+- Local cAdvisor on Docker Desktop can expose `container_last_seen` primarily
+  with `id` labels (without `name`), so the strict worker-name query may return
+  an empty vector even when cAdvisor is healthy.
+- Adding consumer client metric binding increases metric cardinality under
+  heavy consumer-client churn.
+- Integration test setup complexity increases due to runtime isolation
+  requirements (mocked SSE source, listener-assignment synchronization).

@@ -4,16 +4,30 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
 @Service
 public class WikiMetadataNormalizer {
 
-  private static final Map<String, String> WELL_KNOWN_HOST_LABELS =
-      Map.of(
-          "en.wikipedia.org", "English Wikipedia",
-          "www.wikidata.org", "Wikidata",
-          "commons.wikimedia.org", "Wikimedia Commons");
+  private static final Pattern HOST_PATTERN =
+      Pattern.compile("^(?:https?://)?([^/:?#]+)", Pattern.CASE_INSENSITIVE);
+
+  private static final Map<String, String> LANGUAGE_NAME_BY_CODE =
+      Map.ofEntries(
+        Map.entry("en", "English"),
+        Map.entry("fr", "French"),
+        Map.entry("ru", "Russian"),
+        Map.entry("de", "German"),
+        Map.entry("ja", "Japanese"),
+        Map.entry("es", "Spanish"),
+        Map.entry("zh", "Chinese"),
+        Map.entry("it", "Italian"),
+        Map.entry("pt", "Portuguese"),
+        Map.entry("ar", "Arabic"),
+        Map.entry("commons", "Wikimedia Commons"),
+        Map.entry("www", "Wikidata"));
 
   public String normalizeServerUrl(String serverUrl) {
     if (serverUrl == null || serverUrl.isBlank()) {
@@ -22,11 +36,21 @@ public class WikiMetadataNormalizer {
 
     String host = extractHost(serverUrl.trim());
     if (host == null || host.isBlank()) {
-      return stripHttpPrefix(serverUrl.trim());
+      return "Unknown";
     }
 
-    String normalizedHost = host.toLowerCase(Locale.ROOT);
-    return WELL_KNOWN_HOST_LABELS.getOrDefault(normalizedHost, normalizedHost);
+    String[] hostParts = host.toLowerCase(Locale.ROOT).split("\\.");
+    if (hostParts.length == 0 || hostParts[0].isBlank()) {
+      return "Unknown";
+    }
+
+    String subdomain = hostParts[0];
+    String mappedLanguage = LANGUAGE_NAME_BY_CODE.get(subdomain);
+    if (mappedLanguage != null) {
+      return mappedLanguage;
+    }
+
+    return capitalizeFirstLetter(subdomain);
   }
 
   public String normalizeNamespace(Integer namespace) {
@@ -50,24 +74,31 @@ public class WikiMetadataNormalizer {
       if (uri.getHost() != null) {
         return uri.getHost();
       }
+
+      if (uri.getScheme() == null && uri.getPath() != null) {
+        URI withFallbackScheme = new URI("https://" + rawServerUrl);
+        if (withFallbackScheme.getHost() != null) {
+          return withFallbackScheme.getHost();
+        }
+      }
     } catch (URISyntaxException ignored) {
-      // Fall through to prefix stripping for malformed URLs.
+      // Fall through to regex extraction for malformed URLs.
     }
 
-    String stripped = stripHttpPrefix(rawServerUrl);
-    int slashIndex = stripped.indexOf('/');
-    return slashIndex >= 0 ? stripped.substring(0, slashIndex) : stripped;
+    Matcher matcher = HOST_PATTERN.matcher(rawServerUrl);
+    if (!matcher.find()) {
+      return null;
+    }
+
+    return matcher.group(1);
   }
 
-  private String stripHttpPrefix(String value) {
-    if (value.startsWith("https://")) {
-      return value.substring("https://".length());
+  private static String capitalizeFirstLetter(String value) {
+    if (value == null || value.isBlank()) {
+      return "Unknown";
     }
 
-    if (value.startsWith("http://")) {
-      return value.substring("http://".length());
-    }
-
-    return value;
+    String normalized = value.toLowerCase(Locale.ROOT);
+    return normalized.substring(0, 1).toUpperCase(Locale.ROOT) + normalized.substring(1);
   }
 }

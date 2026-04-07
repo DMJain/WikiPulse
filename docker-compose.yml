@@ -127,6 +127,16 @@ services:
     networks:
       - wikipulse-net
 
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    networks:
+      - wikipulse-net
+
   grafana:
     image: grafana/grafana:latest
     container_name: grafana

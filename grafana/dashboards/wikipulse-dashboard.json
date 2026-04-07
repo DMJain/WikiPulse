@@ -5,9 +5,9 @@
   "panels": [
     {
       "type": "timeseries",
-      "title": "Active Worker Containers",
+      "title": "Active Worker Nodes",
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
-      "targets": [{ "expr": "sum(up{job=\"wikipulse-worker\"})", "legendFormat": "Workers Online" }]
+      "targets": [{ "expr": "count(container_last_seen{container_label_com_docker_compose_service=\"wikipulse-worker\"})", "legendFormat": "Workers Online" }]
     },
     {
       "type": "timeseries",

@@ -39,6 +39,9 @@ public interface ProcessedEditRepository extends JpaRepository<ProcessedEdit, Lo
 
   List<ProcessedEdit> findByOrderByEditTimestampDesc(Pageable pageable);
 
+  List<ProcessedEdit> findByEditTimestampGreaterThanEqualAndEditTimestampLessThan(
+      Instant fromInclusive, Instant toExclusive);
+
   default List<LanguageCount> findTopLanguages(Pageable pageable, Instant since, Boolean isBot) {
     return findTopLanguagesInternal(
         pageable,
