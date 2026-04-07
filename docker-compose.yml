@@ -123,7 +123,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks:
       - wikipulse-net
 
@@ -138,7 +138,7 @@ services:
     volumes:
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./grafana/dashboard.json:/var/lib/grafana/dashboards/wikipulse-dashboard.json:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     networks:
       - wikipulse-net
 

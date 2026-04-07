@@ -1,0 +1,39 @@
+{
+  "title": "WikiPulse Platform",
+  "uid": "wikipulse-main",
+  "refresh": "5s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Active Worker Containers",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum(up{job=\"wikipulse-worker\"})", "legendFormat": "Workers Online" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingestion Rate (Edits/sec)",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 0 },
+      "targets": [{ "expr": "sum(rate(wikipulse_edits_processed_total[1m]))", "legendFormat": "Processed/sec" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU Usage per Container",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 7 },
+      "targets": [{ "expr": "process_cpu_usage{job=\"wikipulse-worker\"}", "legendFormat": "{{instance}}" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM Memory Allocated",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 7 },
+      "targets": [{ "expr": "jvm_memory_used_bytes{job=\"wikipulse-worker\"}", "legendFormat": "{{instance}}" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Kafka Consumer Lag",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 14 },
+      "targets": [{ "expr": "sum(kafka_consumer_fetch_manager_records_lag{job=\"wikipulse-worker\"})", "legendFormat": "Total Lag" }]
+    }
+  ],
+  "schemaVersion": 38,
+  "timezone": "browser"
+}
