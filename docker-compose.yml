@@ -169,6 +169,26 @@ services:
     networks:
       - wikipulse-net
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest-alpine
+    container_name: clickhouse
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_PASSWORD: ""
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/initdb.d:/docker-entrypoint-initdb.d:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+      zookeeper:
+        condition: service_healthy
+    networks:
+      - wikipulse-net
+
 networks:
   wikipulse-net:
     driver: bridge
@@ -176,3 +196,4 @@ networks:
 volumes:
   pgdata:
     name: wikipulse_pgdata
+  clickhouse_data:
