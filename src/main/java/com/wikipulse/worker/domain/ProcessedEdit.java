@@ -40,6 +40,21 @@ public class ProcessedEdit implements Persistable<Long> {
   @Column(name = "namespace")
   private Integer namespace;
 
+  @Column(name = "country", length = 255)
+  private String country;
+
+  @Column(name = "city", length = 255)
+  private String city;
+
+  @Column(name = "byte_diff")
+  private Integer byteDiff;
+
+  @Column(name = "is_revert")
+  private Boolean isRevert;
+
+  @Column(name = "is_anonymous")
+  private Boolean isAnonymous;
+
   @Column(name = "edit_timestamp", nullable = false)
   private Instant editTimestamp;
 
@@ -105,6 +120,46 @@ public class ProcessedEdit implements Persistable<Long> {
 
   public void setNamespace(Integer namespace) {
     this.namespace = namespace;
+  }
+
+  public String getCountry() {
+    return country;
+  }
+
+  public void setCountry(String country) {
+    this.country = country;
+  }
+
+  public String getCity() {
+    return city;
+  }
+
+  public void setCity(String city) {
+    this.city = city;
+  }
+
+  public Integer getByteDiff() {
+    return byteDiff;
+  }
+
+  public void setByteDiff(Integer byteDiff) {
+    this.byteDiff = byteDiff;
+  }
+
+  public Boolean getIsRevert() {
+    return isRevert;
+  }
+
+  public void setIsRevert(Boolean isRevert) {
+    this.isRevert = isRevert;
+  }
+
+  public Boolean getIsAnonymous() {
+    return isAnonymous;
+  }
+
+  public void setIsAnonymous(Boolean isAnonymous) {
+    this.isAnonymous = isAnonymous;
   }
 
   public Instant getEditTimestamp() {

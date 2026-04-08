@@ -1,11 +1,14 @@
 package com.wikipulse.producer.client;
 
 import com.wikipulse.producer.domain.WikiEditEvent;
+import com.wikipulse.worker.service.GeoIpEnrichmentService;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -32,15 +35,25 @@ public class WikipediaSseClient {
       "https://stream.wikimedia.org/v2/stream/recentchange";
   private static final String WIKI_EDITS_TOPIC = "wiki-edits";
   private static final int BACKPRESSURE_BUFFER_SIZE = 10_000;
+  private static final Pattern IPV4_PATTERN =
+      Pattern.compile(
+          "^(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}$");
+  private static final Pattern IPV6_PATTERN =
+      Pattern.compile(
+          "^((?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,7}:|(?:[0-9A-Fa-f]{1,4}:){1,6}:[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,5}(?::[0-9A-Fa-f]{1,4}){1,2}|(?:[0-9A-Fa-f]{1,4}:){1,4}(?::[0-9A-Fa-f]{1,4}){1,3}|(?:[0-9A-Fa-f]{1,4}:){1,3}(?::[0-9A-Fa-f]{1,4}){1,4}|(?:[0-9A-Fa-f]{1,4}:){1,2}(?::[0-9A-Fa-f]{1,4}){1,5}|[0-9A-Fa-f]{1,4}:(?:(?::[0-9A-Fa-f]{1,4}){1,6})|:(?:(?::[0-9A-Fa-f]{1,4}){1,7}|:))$");
 
   private final WebClient webClient;
   private final KafkaTemplate<String, WikiEditEvent> kafkaTemplate;
+  private final GeoIpEnrichmentService geoIpEnrichmentService;
   private final AtomicInteger eventCount = new AtomicInteger(0);
 
   public WikipediaSseClient(
-      WebClient.Builder webClientBuilder, KafkaTemplate<String, WikiEditEvent> kafkaTemplate) {
+      WebClient.Builder webClientBuilder,
+      KafkaTemplate<String, WikiEditEvent> kafkaTemplate,
+      GeoIpEnrichmentService geoIpEnrichmentService) {
     this.webClient = webClientBuilder.build();
     this.kafkaTemplate = kafkaTemplate;
+    this.geoIpEnrichmentService = geoIpEnrichmentService;
   }
 
   @EventListener(ApplicationReadyEvent.class)
@@ -91,17 +104,33 @@ public class WikipediaSseClient {
 
   private WikiEditEvent mapToWikiEditEvent(WikipediaSseEvent sseEvent) {
     Map<String, Object> raw = sseEvent.rawData();
+    String user = parseString(raw.get("user"));
+    String comment = parseStringOrDefault(raw.get("comment"), "");
+    boolean isAnonymous = isAnonymousUser(user);
+
+    String country = null;
+    String city = null;
+    if (isAnonymous) {
+      GeoIpEnrichmentService.GeoLocation geoLocation = geoIpEnrichmentService.enrichIp(user);
+      country = geoLocation.country();
+      city = geoLocation.city();
+    }
 
     return new WikiEditEvent(
         parseLong(raw.get("id")),
         parseString(raw.get("title")),
-        parseString(raw.get("user")),
+        user,
         parseEpochTimestamp(raw.get("timestamp")),
         parseString(raw.get("type")),
         parseBoolean(raw.get("bot")),
-        parseStringOrDefault(raw.get("comment"), ""),
-      parseString(raw.get("server_url")),
-      parseInteger(raw.get("namespace")),
+        comment,
+        parseString(raw.get("server_url")),
+        parseInteger(raw.get("namespace")),
+        country,
+        city,
+        parseByteDiff(raw.get("length")),
+        isRevertComment(comment),
+        isAnonymous,
         parseMeta(raw.get("meta")));
   }
 
@@ -178,6 +207,37 @@ public class WikipediaSseClient {
   private String parseStringOrDefault(Object value, String fallback) {
     String parsed = parseString(value);
     return parsed != null ? parsed : fallback;
+  }
+
+  private boolean isAnonymousUser(String userName) {
+    if (userName == null || userName.isBlank()) {
+      return false;
+    }
+    return IPV4_PATTERN.matcher(userName).matches() || IPV6_PATTERN.matcher(userName).matches();
+  }
+
+  private boolean isRevertComment(String comment) {
+    if (comment == null || comment.isBlank()) {
+      return false;
+    }
+    String normalized = comment.toLowerCase(Locale.ROOT);
+    return normalized.contains("revert")
+        || normalized.contains("undo")
+        || normalized.contains("undid");
+  }
+
+  private int parseByteDiff(Object value) {
+    if (!(value instanceof Map<?, ?> lengthMap)) {
+      return 0;
+    }
+
+    Integer oldLength = parseInteger(lengthMap.get("old"));
+    Integer newLength = parseInteger(lengthMap.get("new"));
+    if (oldLength == null || newLength == null) {
+      return 0;
+    }
+
+    return newLength - oldLength;
   }
 
   private Instant parseEpochTimestamp(Object value) {

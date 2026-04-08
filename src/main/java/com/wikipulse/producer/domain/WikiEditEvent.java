@@ -12,6 +12,11 @@ public record WikiEditEvent(
     String comment,
     String serverUrl,
     Integer namespace,
+    String country,
+    String city,
+    Integer byteDiff,
+    Boolean isRevert,
+    Boolean isAnonymous,
     Meta meta) {
 
   public record Meta(String domain, String stream, String uri, Instant dt) {}

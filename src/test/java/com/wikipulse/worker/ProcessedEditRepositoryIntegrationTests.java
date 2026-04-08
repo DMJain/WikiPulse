@@ -44,6 +44,11 @@ class ProcessedEditRepositoryIntegrationTests {
     entity.setUserName("TestUser");
     entity.setPageTitle("Test_Page");
     entity.setEditComment("Fixed a typo");
+    entity.setCountry("Unknown");
+    entity.setCity("Unknown");
+    entity.setByteDiff(0);
+    entity.setIsRevert(false);
+    entity.setIsAnonymous(false);
     entity.setEditTimestamp(Instant.now());
 
     ProcessedEdit saved = repository.saveAndFlush(entity);
@@ -62,6 +67,11 @@ class ProcessedEditRepositoryIntegrationTests {
     entity1.setId(9999L);
     entity1.setUserName("FirstUser");
     entity1.setPageTitle("Some_Page");
+    entity1.setCountry("Unknown");
+    entity1.setCity("Unknown");
+    entity1.setByteDiff(0);
+    entity1.setIsRevert(false);
+    entity1.setIsAnonymous(false);
     entity1.setEditTimestamp(Instant.now());
 
     repository.saveAndFlush(entity1);
@@ -70,6 +80,11 @@ class ProcessedEditRepositoryIntegrationTests {
     entity2.setId(9999L); // Intentionally duplicate ID
     entity2.setUserName("SecondUser");
     entity2.setPageTitle("Another_Page");
+    entity2.setCountry("Unknown");
+    entity2.setCity("Unknown");
+    entity2.setByteDiff(0);
+    entity2.setIsRevert(false);
+    entity2.setIsAnonymous(false);
     entity2.setEditTimestamp(Instant.now());
 
     assertThrows(

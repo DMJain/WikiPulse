@@ -177,6 +177,11 @@ class AnalyticsControllerIntegrationTests {
     edit.setEditComment(editComment);
     edit.setServerUrl(serverUrl);
     edit.setNamespace(namespace);
+    edit.setCountry("Unknown");
+    edit.setCity("Unknown");
+    edit.setByteDiff(0);
+    edit.setIsRevert(false);
+    edit.setIsAnonymous(false);
     edit.setIsBot(isBot);
     edit.setComplexityScore(complexityScore);
     edit.setEditTimestamp(editTimestamp);

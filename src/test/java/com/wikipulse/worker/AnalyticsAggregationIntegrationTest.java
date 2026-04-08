@@ -110,6 +110,11 @@ class AnalyticsAggregationIntegrationTest {
     edit.setEditComment("aggregation-test");
     edit.setServerUrl(serverUrl);
     edit.setNamespace(namespace);
+    edit.setCountry("Unknown");
+    edit.setCity("Unknown");
+    edit.setByteDiff(0);
+    edit.setIsRevert(false);
+    edit.setIsAnonymous(false);
     edit.setIsBot(isBot);
     edit.setComplexityScore(10);
     edit.setEditTimestamp(editTimestamp);

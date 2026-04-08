@@ -84,6 +84,11 @@ class MetricsExportIntegrationTest {
             "Phase 16 telemetry verification",
             "https://en.wikipedia.org",
             0,
+            null,
+            null,
+            0,
+            false,
+            false,
             new WikiEditEvent.Meta(
                 "en.wikipedia.org",
                 "recentchange",

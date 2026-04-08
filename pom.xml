@@ -94,6 +94,12 @@
             <optional>true</optional>
         </dependency>
 
+        <dependency>
+            <groupId>com.maxmind.geoip2</groupId>
+            <artifactId>geoip2</artifactId>
+            <version>4.1.0</version>
+        </dependency>
+
         <!-- ============================================================== -->
         <!-- TESTING: Spring Boot Test + Testcontainers                     -->
         <!-- ============================================================== -->

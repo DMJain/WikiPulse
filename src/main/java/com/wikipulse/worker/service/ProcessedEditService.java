@@ -33,6 +33,11 @@ public class ProcessedEditService {
     entity.setEditComment(event.comment());
     entity.setServerUrl(event.serverUrl());
     entity.setNamespace(event.namespace());
+    entity.setCountry(event.country());
+    entity.setCity(event.city());
+    entity.setByteDiff(event.byteDiff());
+    entity.setIsRevert(event.isRevert());
+    entity.setIsAnonymous(event.isAnonymous());
     entity.setEditTimestamp(event.timestamp());
 
     ProcessedEdit savedEntity = repository.save(entity);
