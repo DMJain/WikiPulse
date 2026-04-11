@@ -15,19 +15,26 @@ import {
 } from 'recharts';
 import {
   fetchBotDistribution,
+  fetchEditBehavior,
+  fetchGeoDistribution,
   fetchKpis,
   fetchNamespaceDistribution,
   fetchTrendData,
   fetchTopLanguages,
   type BotCount,
+  type EditBehavior,
+  type GeoCount,
   type KpiSnapshot,
   type LanguageCount,
   type NamespaceCount,
   type TrendBucket,
 } from '../services/api';
+import { subscribeToAnomalies, type SocketState } from '../services/websocket';
+import type { AnomalyAlert } from '../types/anomaly';
 import './AnalyticsOverviewTab.css';
 
 const POLL_INTERVAL_MS = 10000;
+const MAX_ANOMALY_ITEMS = 10;
 
 const LANGUAGE_NAME_BY_CODE: Record<string, string> = {
   ar: 'Arabic',
@@ -79,6 +86,12 @@ interface LanguageChartDatum {
 interface PieChartDatum {
   name: string;
   value: number;
+}
+
+interface GeoLeaderboardDatum {
+  country: string;
+  count: number;
+  barWidthPct: number;
 }
 
 type TooltipValue = number | string | Array<number | string>;
@@ -187,12 +200,109 @@ function formatTrendBucketLabel(value: string): string {
   return date.toLocaleString();
 }
 
+function formatAnomalyType(anomalyType: string): string {
+  if (!anomalyType) {
+    return 'Unknown';
+  }
+
+  return anomalyType
+    .toLowerCase()
+    .split('_')
+    .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+    .join(' ');
+}
+
+function formatAnomalyTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function anomalyVariantClassName(anomaly: AnomalyAlert, index: number): string {
+  if (anomaly.anomalyType === 'EDIT_WAR') {
+    return 'analytics-anomaly-item--edit-war';
+  }
+
+  if (anomaly.anomalyType === 'TREND_SPIKE') {
+    return index % 2 === 0
+      ? 'analytics-anomaly-item--trend-yellow'
+      : 'analytics-anomaly-item--trend-magenta';
+  }
+
+  return 'analytics-anomaly-item--default';
+}
+
+function socketStateLabel(state: SocketState): string {
+  switch (state) {
+    case 'connecting':
+      return 'Connecting';
+    case 'connected':
+      return 'Live';
+    case 'error':
+      return 'Error';
+    case 'disconnected':
+    default:
+      return 'Offline';
+  }
+}
+
+interface AnomalyTickerProps {
+  anomalies: AnomalyAlert[];
+  socketState: SocketState;
+  streamError: string | null;
+}
+
+function AnomalyTicker({ anomalies, socketState, streamError }: AnomalyTickerProps) {
+  return (
+    <div className="analytics-middle-panel" aria-label="Live anomaly ticker">
+      <div className="analytics-middle-panel-head">
+        <h3>Live Anomaly Ticker</h3>
+        <span className="analytics-middle-badge analytics-middle-badge--anomaly">Phase 25</span>
+        <span className={`analytics-stream-pill analytics-stream-pill--${socketState}`}>
+          {socketStateLabel(socketState)}
+        </span>
+      </div>
+      <div className="analytics-middle-panel-body">
+        {streamError && <p className="analytics-stream-error">⚠ {streamError}</p>}
+        {anomalies.length === 0 ? (
+          <div className="chart-empty">Waiting for anomaly events...</div>
+        ) : (
+          <ul className="analytics-anomaly-list" aria-live="polite">
+            {anomalies.map((anomaly, index) => (
+              <li key={`${anomaly.id}-${index}`} className={`analytics-anomaly-item ${anomalyVariantClassName(anomaly, index)}`}>
+                <div className="analytics-anomaly-meta">
+                  <span className="analytics-anomaly-type">{formatAnomalyType(anomaly.anomalyType)}</span>
+                  <time dateTime={anomaly.windowEnd}>{formatAnomalyTimestamp(anomaly.windowEnd)}</time>
+                </div>
+                <p className="analytics-anomaly-title">{anomaly.pageTitle || 'Unknown Page'}</p>
+                <p className="analytics-anomaly-count">Event Count: {(anomaly.eventCount ?? 0).toLocaleString()}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyticsOverviewTab() {
   const [kpis, setKpis] = useState<KpiSnapshot | null>(null);
+  const [editBehavior, setEditBehavior] = useState<EditBehavior | null>(null);
   const [languageBreakdown, setLanguageBreakdown] = useState<LanguageCount[]>([]);
   const [namespaceBreakdown, setNamespaceBreakdown] = useState<NamespaceCount[]>([]);
   const [botBreakdown, setBotBreakdown] = useState<BotCount[]>([]);
   const [trendData, setTrendData] = useState<TrendBucket[]>([]);
+  const [geoDistribution, setGeoDistribution] = useState<GeoCount[]>([]);
+  const [anomalies, setAnomalies] = useState<AnomalyAlert[]>([]);
+  const [anomalySocketState, setAnomalySocketState] = useState<SocketState>('disconnected');
+  const [anomalyStreamError, setAnomalyStreamError] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState('');
   const [isBot, setIsBot] = useState<boolean | null>(null);
   const [project, setProject] = useState('all');
@@ -212,12 +322,14 @@ export default function AnalyticsOverviewTab() {
       }
 
       try {
-        const [kpiSnapshot, languages, namespaces, bots, trendBuckets] = await Promise.all([
+        const [kpiSnapshot, languages, namespaces, bots, trendBuckets, geoCounts, behaviorSnapshot] = await Promise.all([
           fetchKpis(selectedTimeframe, selectedBotFilter, selectedProject),
           fetchTopLanguages(5, selectedTimeframe, selectedBotFilter, selectedProject),
           fetchNamespaceDistribution(selectedTimeframe, selectedBotFilter, selectedProject),
           fetchBotDistribution(selectedTimeframe, selectedBotFilter, selectedProject),
           fetchTrendData(selectedTimeframe, selectedBotFilter, selectedProject),
+          fetchGeoDistribution(selectedTimeframe, selectedBotFilter, selectedProject),
+          fetchEditBehavior(selectedTimeframe, selectedBotFilter, selectedProject),
         ]);
 
         if (cancelled) {
@@ -229,6 +341,8 @@ export default function AnalyticsOverviewTab() {
         setNamespaceBreakdown(namespaces);
         setBotBreakdown(bots);
         setTrendData(trendBuckets);
+        setGeoDistribution(geoCounts);
+        setEditBehavior(behaviorSnapshot);
         setError(null);
         setLastUpdatedAt(new Date().toISOString());
       } catch {
@@ -253,6 +367,34 @@ export default function AnalyticsOverviewTab() {
       window.clearInterval(intervalId);
     };
   }, [timeframe, isBot, project]);
+
+  useEffect(() => {
+    const stream = subscribeToAnomalies(
+      (alert) => {
+        setAnomalies((current) => {
+          const deduplicated = current.filter((item) => item.id !== alert.id);
+          return [alert, ...deduplicated].slice(0, MAX_ANOMALY_ITEMS);
+        });
+      },
+      {
+        onStatusChange: (nextState) => {
+          setAnomalySocketState(nextState);
+          if (nextState === 'connected') {
+            setAnomalyStreamError(null);
+          }
+        },
+        onError: (message) => {
+          setAnomalyStreamError(message);
+        },
+      },
+    );
+
+    stream.connect();
+
+    return () => {
+      void stream.disconnect();
+    };
+  }, []);
 
   const topLanguageData = useMemo<LanguageChartDatum[]>(
     () =>
@@ -296,10 +438,32 @@ export default function AnalyticsOverviewTab() {
   const hasBotData = botDistributionData.some((entry) => entry.value > 0);
   const hasNamespaceData = namespaceDistributionData.length > 0;
   const hasTrendData = trendData.length > 0;
+  const hasGeoData = geoDistribution.length > 0;
   const totalEdits = kpis?.totalEdits ?? 0;
   const botPercentage = kpis?.botPercentage ?? 0;
   const averageComplexity = kpis?.averageComplexity ?? 0;
+  const revertRatePct = editBehavior?.revertRatePct ?? 0;
+  const avgAbsoluteByteDiff = editBehavior?.avgAbsoluteByteDiff ?? 0;
   const botFilterValue = isBot === null ? 'all' : isBot ? 'bots' : 'humans';
+
+  const geoLeaderboardData = useMemo<GeoLeaderboardDatum[]>(() => {
+    if (geoDistribution.length === 0) {
+      return [];
+    }
+
+    const maxCount = Math.max(...geoDistribution.map((entry) => entry.count), 1);
+
+    return geoDistribution.map((entry) => {
+      const normalizedCountry = entry.country && entry.country.trim() ? entry.country : 'Unknown';
+      const barWidthPct = Math.max(10, Math.round((entry.count / maxCount) * 100));
+
+      return {
+        country: normalizedCountry,
+        count: entry.count,
+        barWidthPct,
+      };
+    });
+  }, [geoDistribution]);
 
   return (
     <section className="analytics-shell">
@@ -390,6 +554,14 @@ export default function AnalyticsOverviewTab() {
             <p className="analytics-kpi-label">Avg Complexity</p>
             <p className="analytics-kpi-value">{averageComplexity.toFixed(1)}</p>
           </article>
+          <article className="analytics-kpi-card">
+            <p className="analytics-kpi-label">Revert Rate %</p>
+            <p className="analytics-kpi-value">{revertRatePct.toFixed(1)}%</p>
+          </article>
+          <article className="analytics-kpi-card">
+            <p className="analytics-kpi-label">Avg Byte Diff</p>
+            <p className="analytics-kpi-value">{avgAbsoluteByteDiff.toFixed(1)}</p>
+          </article>
         </section>
 
       </div>
@@ -398,32 +570,40 @@ export default function AnalyticsOverviewTab() {
           MIDDLE ROW: Phase-25 Placeholder Panels
          ══════════════════════════════════════════════════ */}
       <div className="analytics-middle-row">
+        <AnomalyTicker
+          anomalies={anomalies}
+          socketState={anomalySocketState}
+          streamError={anomalyStreamError}
+        />
 
-        {/* Left: Live Event Ticker & Anomalies */}
-        <div className="analytics-placeholder-panel" aria-label="Live Event Ticker placeholder">
-          <div className="analytics-placeholder-head">
-            <h3>Live Event Ticker &amp; Anomalies</h3>
-            <span className="analytics-placeholder-badge analytics-placeholder-badge--coming">Phase 25</span>
+        <div className="analytics-middle-panel" aria-label="Geographic distribution leaderboard">
+          <div className="analytics-middle-panel-head">
+            <h3>Brutalist Geo-Leaderboard</h3>
+            <span className="analytics-middle-badge analytics-middle-badge--geo">Phase 25</span>
           </div>
-          <div className="analytics-placeholder-body">
-            <div className="analytics-placeholder-inner">
-              <span className="analytics-placeholder-icon" aria-hidden="true">⚡</span>
-              <p>Real-time anomaly stream — coming in Phase 25</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Geographic Distribution Map */}
-        <div className="analytics-placeholder-panel" aria-label="Geographic Distribution Map placeholder">
-          <div className="analytics-placeholder-head">
-            <h3>Geographic Distribution Map</h3>
-            <span className="analytics-placeholder-badge analytics-placeholder-badge--phase">Phase 25</span>
-          </div>
-          <div className="analytics-placeholder-body">
-            <div className="analytics-placeholder-inner">
-              <span className="analytics-placeholder-icon" aria-hidden="true">🌍</span>
-              <p>Global edit distribution map — coming in Phase 25</p>
-            </div>
+          <div className="analytics-middle-panel-body">
+            {loading && !hasGeoData ? (
+              <div className="chart-empty">Loading geo distribution...</div>
+            ) : hasGeoData ? (
+              <ul className="analytics-geo-list" aria-live="polite">
+                {geoLeaderboardData.map((entry, index) => (
+                  <li key={`${entry.country}-${index}`} className="analytics-geo-item">
+                    <div className="analytics-geo-row">
+                      <span className="analytics-geo-country">{entry.country}</span>
+                      <span className="analytics-geo-count">{entry.count.toLocaleString()}</span>
+                    </div>
+                    <div className="analytics-geo-track" aria-hidden="true">
+                      <div
+                        className={`analytics-geo-bar analytics-geo-bar--${(index % 4) + 1}`}
+                        style={{ width: `${entry.barWidthPct}%` }}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="chart-empty">No geographic data yet.</div>
+            )}
           </div>
         </div>
 

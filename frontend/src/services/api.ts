@@ -30,6 +30,17 @@ export interface TrendBucket {
   botEdits: number;
 }
 
+export interface GeoCount {
+  country: string;
+  count: number;
+}
+
+export interface EditBehavior {
+  totalEdits: number;
+  revertRatePct: number;
+  avgAbsoluteByteDiff: number;
+}
+
 interface AnalyticsFilters {
   timeframe?: string;
   isBot?: boolean;
@@ -117,6 +128,30 @@ export async function fetchTrendData(
   project?: string,
 ): Promise<TrendBucket[]> {
   const response = await http.get<TrendBucket[]>('/api/analytics/trend', {
+    params: buildAnalyticsParams(timeframe, isBot, project),
+  });
+
+  return response.data;
+}
+
+export async function fetchGeoDistribution(
+  timeframe?: string,
+  isBot?: boolean,
+  project?: string,
+): Promise<GeoCount[]> {
+  const response = await http.get<GeoCount[]>('/api/v2/analytics/geo', {
+    params: buildAnalyticsParams(timeframe, isBot, project),
+  });
+
+  return response.data;
+}
+
+export async function fetchEditBehavior(
+  timeframe?: string,
+  isBot?: boolean,
+  project?: string,
+): Promise<EditBehavior> {
+  const response = await http.get<EditBehavior>('/api/v2/analytics/behavior', {
     params: buildAnalyticsParams(timeframe, isBot, project),
   });
 

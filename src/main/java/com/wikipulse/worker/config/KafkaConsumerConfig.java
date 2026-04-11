@@ -1,6 +1,7 @@
 package com.wikipulse.worker.config;
 
 import com.wikipulse.producer.domain.WikiEditEvent;
+import com.wikipulse.worker.domain.AnomalyAlert;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -53,6 +54,37 @@ public class KafkaConsumerConfig {
         ConcurrentKafkaListenerContainerFactory<String, WikiEditEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
+        factory.setCommonErrorHandler(errorHandler);
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        factory.getContainerProperties().setObservationEnabled(true);
+        return factory;
+    }
+
+    @Bean
+    public ConsumerFactory<String, AnomalyAlert> anomalyConsumerFactory(
+            KafkaProperties kafkaProperties,
+            MeterRegistry meterRegistry) {
+        Map<String, Object> props = kafkaProperties.buildConsumerProperties(null);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
+        props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
+        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, AnomalyAlert.class.getName());
+        props.put(JsonDeserializer.TRUSTED_PACKAGES, "*");
+
+        DefaultKafkaConsumerFactory<String, AnomalyAlert> consumerFactory =
+                new DefaultKafkaConsumerFactory<>(props);
+        consumerFactory.addListener(new MicrometerConsumerListener<>(meterRegistry));
+        return consumerFactory;
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, AnomalyAlert> anomalyListenerContainerFactory(
+            ConsumerFactory<String, AnomalyAlert> anomalyConsumerFactory,
+            CommonErrorHandler errorHandler) {
+        ConcurrentKafkaListenerContainerFactory<String, AnomalyAlert> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(anomalyConsumerFactory);
         factory.setCommonErrorHandler(errorHandler);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
         factory.getContainerProperties().setObservationEnabled(true);

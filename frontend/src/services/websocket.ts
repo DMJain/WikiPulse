@@ -1,9 +1,11 @@
 import { Client, type IMessage, type StompSubscription } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import type { EditUpdate } from '../types/edit';
+import type { AnomalyAlert } from '../types/anomaly';
 
 const WEBSOCKET_URL = import.meta.env.VITE_WS_URL ?? 'http://localhost:8080/ws-wikipulse';
 const EDIT_TOPIC = '/topic/edits';
+const ANOMALY_TOPIC = '/topic/anomalies';
 
 export type SocketState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -21,6 +23,14 @@ export interface EditStreamController {
 function parseEditPayload(message: IMessage): EditUpdate | null {
   try {
     return JSON.parse(message.body) as EditUpdate;
+  } catch {
+    return null;
+  }
+}
+
+function parseAnomalyPayload(message: IMessage): AnomalyAlert | null {
+  try {
+    return JSON.parse(message.body) as AnomalyAlert;
   } catch {
     return null;
   }
@@ -79,6 +89,72 @@ export function createEditStream(handlers: EditStreamHandlers): EditStreamContro
       }
 
       handlers.onStatusChange?.('disconnected');
+      await client.deactivate();
+    },
+  };
+}
+
+interface AnomalyStreamOptions {
+  onStatusChange?: (state: SocketState) => void;
+  onError?: (message: string) => void;
+}
+
+export function subscribeToAnomalies(
+  callback: (alert: AnomalyAlert) => void,
+  options: AnomalyStreamOptions = {},
+): EditStreamController {
+  let subscription: StompSubscription | null = null;
+
+  const client = new Client({
+    webSocketFactory: () => new SockJS(WEBSOCKET_URL),
+    reconnectDelay: 3000,
+    heartbeatIncoming: 10000,
+    heartbeatOutgoing: 10000,
+  });
+
+  client.onConnect = () => {
+    options.onStatusChange?.('connected');
+
+    subscription = client.subscribe(ANOMALY_TOPIC, (message) => {
+      const payload = parseAnomalyPayload(message);
+      if (!payload) {
+        options.onError?.('Received malformed anomaly payload from stream.');
+        return;
+      }
+      callback(payload);
+    });
+  };
+
+  client.onStompError = (frame) => {
+    options.onStatusChange?.('error');
+    options.onError?.(frame.headers.message ?? 'STOMP broker error.');
+  };
+
+  client.onWebSocketError = () => {
+    options.onStatusChange?.('error');
+    options.onError?.('WebSocket transport error.');
+  };
+
+  client.onWebSocketClose = () => {
+    options.onStatusChange?.('disconnected');
+  };
+
+  return {
+    connect: () => {
+      if (client.active) {
+        return;
+      }
+
+      options.onStatusChange?.('connecting');
+      client.activate();
+    },
+    disconnect: async () => {
+      if (subscription) {
+        subscription.unsubscribe();
+        subscription = null;
+      }
+
+      options.onStatusChange?.('disconnected');
       await client.deactivate();
     },
   };
