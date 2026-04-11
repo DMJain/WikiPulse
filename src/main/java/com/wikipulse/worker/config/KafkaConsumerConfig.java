@@ -89,4 +89,11 @@ public class KafkaConsumerConfig {
                 .partitions(3)
                 .build();
     }
+
+    @Bean
+    public NewTopic wikiAnomaliesTopic() {
+        return TopicBuilder.name("wiki-anomalies")
+                .partitions(3)
+                .build();
+    }
 }

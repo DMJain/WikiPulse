@@ -2,3 +2,6 @@ spring:
   datasource:
     url: jdbc:tc:postgresql:15-alpine:///wikipulsedb
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  kafka:
+    streams:
+      auto-startup: false
