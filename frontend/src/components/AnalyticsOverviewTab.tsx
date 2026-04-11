@@ -67,8 +67,9 @@ const NAMESPACE_LABELS: Record<string, string> = {
   '15': 'Category talk',
 };
 
-const BOT_SLICE_COLORS = ['#ca8a04', '#0f766e'];
-const NAMESPACE_SLICE_COLORS = ['#0f766e', '#0f8a64', '#0891b2', '#d97706', '#b45309', '#64748b'];
+// Neo-Brutalist chart accent palette
+const BOT_SLICE_COLORS = ['#ff00ff', '#00ff66'];
+const NAMESPACE_SLICE_COLORS = ['#fff500', '#00ff66', '#ff00ff', '#00e5ff', '#ff6600', '#0a0a0a'];
 
 interface LanguageChartDatum {
   language: string;
@@ -83,9 +84,12 @@ interface PieChartDatum {
 type TooltipValue = number | string | Array<number | string>;
 
 const TOOLTIP_CONTENT_STYLE = {
-  borderRadius: 12,
-  border: '1px solid rgba(15, 118, 110, 0.3)',
-  backgroundColor: 'rgba(255, 255, 255, 0.96)',
+  borderRadius: 0,
+  border: '2px solid #000000',
+  backgroundColor: '#ffffff',
+  boxShadow: '4px 4px 0px #000000',
+  fontFamily: "'Roboto Mono', monospace",
+  fontSize: '0.78rem',
 } as const;
 
 function formatTooltipValue(value: TooltipValue): string {
@@ -299,83 +303,138 @@ export default function AnalyticsOverviewTab() {
 
   return (
     <section className="analytics-shell">
+
+      {/* ── Header ─────────────────────────────────────── */}
       <header className="analytics-header">
         <div>
-          <p className="analytics-kicker">Analytics Overview</p>
-          <h2>Aggregated Insights (Dynamic Filters + KPI Cards)</h2>
+          <p className="analytics-kicker">// WikiPulse :: Command Center</p>
+          <h2>Analytics Overview</h2>
           <p>
-            Metrics and charts stay in sync with timeframe, bot-status, and project filters,
-            refreshing every 10 seconds.
+            Metrics sync with timeframe, bot-status, and project filters — refreshing every 10s.
           </p>
         </div>
-        <div className="analytics-refresh-pill">Last updated: {formatUpdatedAt(lastUpdatedAt)}</div>
+        <div className="analytics-refresh-pill" aria-live="polite">
+          ⟳ {formatUpdatedAt(lastUpdatedAt)}
+        </div>
       </header>
 
-      <section className="analytics-kpi-row" aria-label="KPI metrics">
-        <article className="analytics-kpi-card">
-          <p className="analytics-kpi-label">Total Edits</p>
-          <p className="analytics-kpi-value">{totalEdits.toLocaleString()}</p>
-        </article>
-        <article className="analytics-kpi-card">
-          <p className="analytics-kpi-label">Bot Percentage</p>
-          <p className="analytics-kpi-value">{botPercentage.toFixed(1)}%</p>
-        </article>
-        <article className="analytics-kpi-card">
-          <p className="analytics-kpi-label">Average Complexity</p>
-          <p className="analytics-kpi-value">{averageComplexity.toFixed(1)}</p>
-        </article>
-      </section>
-
-      <section className="analytics-filter-bar" aria-label="Filter controls">
-        <div className="analytics-filter-control">
-          <label htmlFor="analytics-timeframe">Timeframe</label>
-          <select
-            id="analytics-timeframe"
-            value={timeframe}
-            onChange={(event) => setTimeframe(event.target.value)}
-          >
-            <option value="">All Time</option>
-            <option value="1h">Last 1 Hour</option>
-            <option value="24h">Last 24 Hours</option>
-            <option value="7d">Last 7 Days</option>
-          </select>
-        </div>
-
-        <div className="analytics-filter-control">
-          <label htmlFor="analytics-bot-filter">Bot Status</label>
-          <select
-            id="analytics-bot-filter"
-            value={botFilterValue}
-            onChange={(event) => setIsBot(parseBotFilterValue(event.target.value))}
-          >
-            <option value="all">All</option>
-            <option value="bots">Bots Only</option>
-            <option value="humans">Humans Only</option>
-          </select>
-        </div>
-
-        <div className="analytics-filter-control">
-          <label htmlFor="analytics-project-filter">Project Filter</label>
-          <select
-            id="analytics-project-filter"
-            value={project}
-            onChange={(event) => setProject(event.target.value)}
-          >
-            <option value="all">All</option>
-            <option value="wikipedia">Wikipedia</option>
-            <option value="wikimedia-commons">Wikimedia Commons</option>
-            <option value="wikidata">Wikidata</option>
-          </select>
-        </div>
-      </section>
-
+      {/* ── Error Banner ────────────────────────────────── */}
       {error && (
         <section className="analytics-errors" aria-live="polite">
-          <p>{error}</p>
+          <p>⚠ {error}</p>
         </section>
       )}
 
+      {/* ══════════════════════════════════════════════════
+          TOP ROW: Filter Controls + 3 KPI Cards
+         ══════════════════════════════════════════════════ */}
+      <div className="analytics-top-row">
+
+        {/* Filter sidebar */}
+        <section className="analytics-filter-bar" aria-label="Filter controls">
+          <span className="analytics-filter-bar-label">// Filters</span>
+
+          <div className="analytics-filter-control">
+            <label htmlFor="analytics-timeframe">Timeframe</label>
+            <select
+              id="analytics-timeframe"
+              value={timeframe}
+              onChange={(event) => setTimeframe(event.target.value)}
+            >
+              <option value="">All Time</option>
+              <option value="1h">Last 1 Hour</option>
+              <option value="24h">Last 24 Hours</option>
+              <option value="7d">Last 7 Days</option>
+            </select>
+          </div>
+
+          <div className="analytics-filter-control">
+            <label htmlFor="analytics-bot-filter">Bot Status</label>
+            <select
+              id="analytics-bot-filter"
+              value={botFilterValue}
+              onChange={(event) => setIsBot(parseBotFilterValue(event.target.value))}
+            >
+              <option value="all">All</option>
+              <option value="bots">Bots Only</option>
+              <option value="humans">Humans Only</option>
+            </select>
+          </div>
+
+          <div className="analytics-filter-control">
+            <label htmlFor="analytics-project-filter">Project</label>
+            <select
+              id="analytics-project-filter"
+              value={project}
+              onChange={(event) => setProject(event.target.value)}
+            >
+              <option value="all">All</option>
+              <option value="wikipedia">Wikipedia</option>
+              <option value="wikimedia-commons">Commons</option>
+              <option value="wikidata">Wikidata</option>
+            </select>
+          </div>
+        </section>
+
+        {/* KPI Cards */}
+        <section className="analytics-kpi-row" aria-label="KPI metrics">
+          <article className="analytics-kpi-card">
+            <p className="analytics-kpi-label">Total Edits</p>
+            <p className="analytics-kpi-value">{totalEdits.toLocaleString()}</p>
+          </article>
+          <article className="analytics-kpi-card">
+            <p className="analytics-kpi-label">Bot Percentage</p>
+            <p className="analytics-kpi-value">{botPercentage.toFixed(1)}%</p>
+          </article>
+          <article className="analytics-kpi-card">
+            <p className="analytics-kpi-label">Avg Complexity</p>
+            <p className="analytics-kpi-value">{averageComplexity.toFixed(1)}</p>
+          </article>
+        </section>
+
+      </div>
+
+      {/* ══════════════════════════════════════════════════
+          MIDDLE ROW: Phase-25 Placeholder Panels
+         ══════════════════════════════════════════════════ */}
+      <div className="analytics-middle-row">
+
+        {/* Left: Live Event Ticker & Anomalies */}
+        <div className="analytics-placeholder-panel" aria-label="Live Event Ticker placeholder">
+          <div className="analytics-placeholder-head">
+            <h3>Live Event Ticker &amp; Anomalies</h3>
+            <span className="analytics-placeholder-badge analytics-placeholder-badge--coming">Phase 25</span>
+          </div>
+          <div className="analytics-placeholder-body">
+            <div className="analytics-placeholder-inner">
+              <span className="analytics-placeholder-icon" aria-hidden="true">⚡</span>
+              <p>Real-time anomaly stream — coming in Phase 25</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Geographic Distribution Map */}
+        <div className="analytics-placeholder-panel" aria-label="Geographic Distribution Map placeholder">
+          <div className="analytics-placeholder-head">
+            <h3>Geographic Distribution Map</h3>
+            <span className="analytics-placeholder-badge analytics-placeholder-badge--phase">Phase 25</span>
+          </div>
+          <div className="analytics-placeholder-body">
+            <div className="analytics-placeholder-inner">
+              <span className="analytics-placeholder-icon" aria-hidden="true">🌍</span>
+              <p>Global edit distribution map — coming in Phase 25</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* ══════════════════════════════════════════════════
+          BOTTOM ROW: Recharts Grid
+         ══════════════════════════════════════════════════ */}
       <div className="analytics-grid">
+
+        {/* Top Languages Bar Chart */}
         <article className="analytics-card analytics-card-wide">
           <div className="analytics-card-head">
             <h3>Top 5 Languages</h3>
@@ -387,15 +446,25 @@ export default function AnalyticsOverviewTab() {
             ) : hasLanguageData ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={topLanguageData} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(70, 98, 91, 0.24)" />
-                  <XAxis dataKey="language" tickLine={false} axisLine={false} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                  <CartesianGrid strokeDasharray="none" vertical={false} stroke="rgba(0,0,0,0.08)" />
+                  <XAxis
+                    dataKey="language"
+                    tickLine={false}
+                    axisLine={{ stroke: '#000000', strokeWidth: 1 }}
+                    tick={{ fontFamily: "'Roboto Mono', monospace", fontSize: 11 }}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontFamily: "'Roboto Mono', monospace", fontSize: 11 }}
+                  />
                   <Tooltip
                     formatter={(value) => formatTooltipValue(value as TooltipValue)}
                     contentStyle={TOOLTIP_CONTENT_STYLE}
-                    cursor={{ fill: 'rgba(15, 138, 100, 0.08)' }}
+                    cursor={{ fill: 'rgba(0,0,0,0.05)' }}
                   />
-                  <Bar dataKey="edits" fill="#0f8a64" radius={[8, 8, 0, 0]} />
+                  <Bar dataKey="edits" fill="#0a0a0a" radius={[0, 0, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -404,6 +473,7 @@ export default function AnalyticsOverviewTab() {
           </div>
         </article>
 
+        {/* Bot vs Human Pie Chart */}
         <article className="analytics-card">
           <div className="analytics-card-head">
             <h3>Bot vs Human</h3>
@@ -421,7 +491,9 @@ export default function AnalyticsOverviewTab() {
                     nameKey="name"
                     innerRadius={56}
                     outerRadius={88}
-                    paddingAngle={2}
+                    paddingAngle={0}
+                    strokeWidth={2}
+                    stroke="#000000"
                   >
                     {botDistributionData.map((entry, index) => (
                       <Cell key={entry.name} fill={BOT_SLICE_COLORS[index % BOT_SLICE_COLORS.length]} />
@@ -439,6 +511,7 @@ export default function AnalyticsOverviewTab() {
           </div>
         </article>
 
+        {/* Namespace Distribution Pie Chart */}
         <article className="analytics-card">
           <div className="analytics-card-head">
             <h3>Namespace Distribution</h3>
@@ -456,7 +529,9 @@ export default function AnalyticsOverviewTab() {
                     nameKey="name"
                     innerRadius={56}
                     outerRadius={88}
-                    paddingAngle={2}
+                    paddingAngle={0}
+                    strokeWidth={2}
+                    stroke="#000000"
                   >
                     {namespaceDistributionData.map((entry, index) => (
                       <Cell
@@ -477,6 +552,7 @@ export default function AnalyticsOverviewTab() {
           </div>
         </article>
 
+        {/* Edit Volume Trend Area Chart */}
         <article className="analytics-card analytics-card-wide">
           <div className="analytics-card-head">
             <h3>Edit Volume over Time</h3>
@@ -490,23 +566,29 @@ export default function AnalyticsOverviewTab() {
                 <AreaChart data={trendData} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
                   <defs>
                     <linearGradient id="trendTotalGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0f8a64" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#0f8a64" stopOpacity={0.05} />
+                      <stop offset="5%" stopColor="#00ff66" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#00ff66" stopOpacity={0.04} />
                     </linearGradient>
                     <linearGradient id="trendBotGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ca8a04" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#ca8a04" stopOpacity={0.04} />
+                      <stop offset="5%" stopColor="#ff00ff" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#ff00ff" stopOpacity={0.04} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(70, 98, 91, 0.24)" />
+                  <CartesianGrid strokeDasharray="none" vertical={false} stroke="rgba(0,0,0,0.08)" />
                   <XAxis
                     dataKey="timeBucket"
                     tickFormatter={(value) => formatTrendBucketTick(String(value))}
                     minTickGap={24}
                     tickLine={false}
-                    axisLine={false}
+                    axisLine={{ stroke: '#000000', strokeWidth: 1 }}
+                    tick={{ fontFamily: "'Roboto Mono', monospace", fontSize: 11 }}
                   />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                  <YAxis
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontFamily: "'Roboto Mono', monospace", fontSize: 11 }}
+                  />
                   <Tooltip
                     labelFormatter={(value) => formatTrendBucketLabel(String(value))}
                     formatter={(value) => formatTooltipValue(value as TooltipValue)}
@@ -516,7 +598,7 @@ export default function AnalyticsOverviewTab() {
                     type="monotone"
                     dataKey="totalEdits"
                     name="Total Edits"
-                    stroke="#0f8a64"
+                    stroke="#00ff66"
                     strokeWidth={2}
                     fill="url(#trendTotalGradient)"
                   />
@@ -524,7 +606,7 @@ export default function AnalyticsOverviewTab() {
                     type="monotone"
                     dataKey="botEdits"
                     name="Bot Edits"
-                    stroke="#ca8a04"
+                    stroke="#ff00ff"
                     strokeWidth={2}
                     fill="url(#trendBotGradient)"
                   />
@@ -535,6 +617,7 @@ export default function AnalyticsOverviewTab() {
             )}
           </div>
         </article>
+
       </div>
     </section>
   );

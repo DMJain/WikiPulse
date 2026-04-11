@@ -1,38 +1,79 @@
+/* ============================================================
+   DashboardLayout — Neo-Brutalist Shell (Phase 24)
+   ============================================================ */
+
 .dashboard-shell {
   display: grid;
   gap: 1rem;
+  max-width: 1600px;
+  margin: 0 auto;
 }
 
+/* ── App-level wrapper ───────────────────────────────────── */
+.app-shell {
+  min-height: 100vh;
+  padding: 1.5rem;
+}
+
+/* ── Header ──────────────────────────────────────────────── */
 .dashboard-header {
-  background: var(--panel-bg);
-  border: 1px solid var(--line-soft);
-  border-radius: 18px;
-  padding: 1.25rem 1.35rem;
-  box-shadow: 0 12px 30px rgba(15, 66, 57, 0.1);
+  background: #000000;
+  border: var(--brutal-border);
+  border-radius: 0;
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--brutal-shadow);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Accent stripe */
+.dashboard-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--accent-green) 0%,
+    var(--accent-green) 33.3%,
+    var(--accent-magenta) 33.3%,
+    var(--accent-magenta) 66.6%,
+    var(--accent-yellow) 66.6%,
+    var(--accent-yellow) 100%
+  );
 }
 
 .dashboard-kicker {
   margin: 0;
-  font-family: var(--font-mono);
+  font-family: var(--brutal-font);
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--ink-muted);
-  font-size: 0.76rem;
+  letter-spacing: 0.16em;
+  color: var(--accent-green);
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 .dashboard-header h1 {
   margin: 0.45rem 0 0;
-  font-size: clamp(1.55rem, 2.2vw, 2.15rem);
-  line-height: 1.2;
+  font-size: clamp(1.45rem, 2vw, 2rem);
+  line-height: 1.15;
+  color: #ffffff;
+  font-family: var(--brutal-font);
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .dashboard-subtitle {
   margin: 0.5rem 0 0;
-  color: var(--ink-muted);
+  color: rgba(255, 255, 255, 0.6);
   max-width: 68ch;
-  font-size: 0.92rem;
+  font-size: 0.8rem;
+  font-family: var(--brutal-font);
 }
 
+/* ── Tab Navigation ──────────────────────────────────────── */
 .dashboard-tabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -41,50 +82,71 @@
 
 .dashboard-tab-button {
   text-align: left;
-  border: 1px solid var(--line-soft);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.76);
-  color: inherit;
-  padding: 0.85rem 0.95rem;
+  border: var(--brutal-border);
+  border-radius: 0;
+  background: #ffffff;
+  color: var(--ink-primary);
+  padding: 0.85rem 1rem;
   display: grid;
   gap: 0.2rem;
   cursor: pointer;
-  transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+  box-shadow: var(--brutal-shadow);
+  transition: box-shadow 80ms ease, transform 80ms ease, background 80ms ease;
+  font-family: var(--brutal-font);
 }
 
 .dashboard-tab-button:hover {
-  border-color: rgba(6, 118, 94, 0.55);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(15, 66, 57, 0.1);
+  background: var(--brutal-surface);
+  box-shadow: var(--brutal-shadow-hover);
+  transform: translate(-1px, -1px);
 }
 
 .dashboard-tab-button.active {
-  border-color: rgba(6, 118, 94, 0.95);
-  background: linear-gradient(135deg, rgba(0, 143, 122, 0.2), rgba(255, 255, 255, 0.92));
+  background: #000000;
+  color: #ffffff;
+  box-shadow: var(--brutal-shadow);
+}
+
+.dashboard-tab-button.active .tab-label {
+  color: var(--accent-green);
+}
+
+.dashboard-tab-button.active .tab-subtitle {
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .dashboard-tab-button:focus-visible {
-  outline: 3px solid rgba(13, 148, 136, 0.35);
+  outline: 3px solid var(--accent-green);
   outline-offset: 2px;
 }
 
 .tab-label {
   font-weight: 700;
-  font-size: 0.96rem;
-  color: var(--ink-strong);
+  font-size: 0.88rem;
+  color: var(--ink-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-family: var(--brutal-font);
 }
 
 .tab-subtitle {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   color: var(--ink-muted);
+  font-family: var(--brutal-font);
 }
 
+/* ── Panel ───────────────────────────────────────────────── */
 .dashboard-panel {
   min-width: 0;
 }
 
+/* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 900px) {
   .dashboard-tabs {
     grid-template-columns: 1fr;
+  }
+
+  .app-shell {
+    padding: 0.75rem;
   }
 }

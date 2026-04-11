@@ -1,6 +1,1 @@
-.app-shell {
-  max-width: 1240px;
-  margin: 0 auto;
-  min-height: 100vh;
-  padding: clamp(0.9rem, 2.2vw, 1.8rem);
-}
+/* App.css — shell padding handled in DashboardLayout.css (Phase 24) */
