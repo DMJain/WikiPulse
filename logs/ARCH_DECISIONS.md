@@ -1241,3 +1241,128 @@ worker visibility from cAdvisor in Prometheus/Grafana.
   heavy consumer-client churn.
 - Integration test setup complexity increases due to runtime isolation
   requirements (mocked SSE source, listener-assignment synchronization).
+
+---
+
+## ADR-039: CQRS and ClickHouse Kafka Engine for OLAP Isolation (Phase 20)
+
+**Date**: 2026-04-11
+**Status**: Accepted
+
+### Context
+Phase 20 introduced a dedicated analytical read-model to prevent dashboard and
+aggregation workloads from contending with the transactional PostgreSQL path.
+The primary write pipeline remains Kafka -> worker -> PostgreSQL for durable
+event processing, but high-volume grouped queries (geo distribution, trend
+slices, behavior analytics) were beginning to overlap with OLTP concerns.
+
+The system required a strict read-write split that keeps mission-critical write
+latency stable while still supporting ad-hoc and heavy OLAP scans for
+visualizations and exploration.
+
+### Decision
+1. Adopt CQRS read-write separation for analytics: PostgreSQL remains the
+   system of record for transactional writes, while ClickHouse becomes the
+   dedicated OLAP query store.
+2. Ingest analytics events into ClickHouse using the Kafka engine +
+   materialized view pattern (`wiki_edits_queue` -> `wiki_edits`) so read
+   freshness remains near-real-time without adding write-path coupling.
+3. Route deep analytical APIs to ClickHouse through an isolated JDBC
+   integration, ensuring query pressure does not compete with JPA write traffic
+   on PostgreSQL.
+
+### Rationale
+- Protects ADR-013 write-ahead persistence guarantees by keeping OLTP and OLAP
+  resource profiles independent.
+- Preserves Kafka-first architecture while enabling columnar aggregation speed
+  for high-cardinality slices.
+- Reduces operational risk of dashboard spikes causing lock contention or slow
+  query amplification on transactional tables.
+
+### Trade-offs
+- Introduces dual-database operational overhead (schema lifecycle, credentials,
+  connectivity checks, and observability for both stores).
+- Creates eventual-consistency windows between transactional persistence and
+  OLAP visibility.
+- Requires parallel query contracts and stronger API ownership boundaries to
+  avoid semantic drift between stores.
+
+---
+
+## ADR-040: Stream Enrichment and GeoIP Failsafe Contract (Phase 21)
+
+**Date**: 2026-04-11
+**Status**: Accepted
+
+### Context
+Phase 21 expanded event enrichment with geo dimensions to power regional
+analytics and anomaly segmentation. Geo enrichment depends on external MaxMind
+GeoIP resolution, which is inherently fallible due to private IPs, unmapped
+ranges, transient lookup failures, and malformed source metadata.
+
+Because the ingestion pipeline is designed for flow continuity, enrichment
+errors must never block Kafka consumption, persistence, or downstream metrics.
+
+### Decision
+1. Integrate MaxMind lookup in the worker enrichment step to derive country and
+   city attributes used by analytics read paths.
+2. Treat GeoIP enrichment as best-effort and non-blocking. On lookup failure,
+   null response, or parsing errors, assign canonical fallback values using
+   `"Unknown"` geo labels.
+3. Preserve ingestion continuity as the primary invariant: enrichment failure
+   must not alter offset handling, deduplication flow, or save-before-ack
+   ordering.
+
+### Rationale
+- Retains pipeline liveness under imperfect external data conditions.
+- Produces deterministic analytics categories, preventing null-fragmented query
+  outputs and simplifying charting contracts.
+- Aligns with earlier resilience decisions (ADR-011, ADR-026) that prioritize
+  progress and replay safety over brittle inline dependencies.
+
+### Trade-offs
+- `Unknown` buckets reduce geo precision and can mask localized signal quality
+  issues without additional enrichment telemetry.
+- Best-effort enrichment may under-represent regional patterns when lookup
+  coverage degrades.
+- Requires explicit documentation so consumers interpret `Unknown` as a
+  controlled resilience state, not missing ingestion.
+
+---
+
+## ADR-041: Complex Event Processing via Kafka Streams Windows (Phase 22)
+
+**Date**: 2026-04-11
+**Status**: Accepted
+
+### Context
+Phase 22 added stream-native anomaly detection alongside the standard consumer
+pipeline. The system needed temporal anomaly signals (trend spikes and revert
+bursts) without disrupting the existing deduplication/persistence worker path.
+
+Operationally, anomaly detection had to run as a parallel concern with bounded
+window semantics so alerts remain interpretable and reproducible.
+
+### Decision
+1. Introduce a Kafka Streams topology running in parallel with the standard
+   consumer flow, using a dedicated streams application id.
+2. Implement 60-second tumbling windows (`TimeWindows.ofSizeWithNoGrace`) for
+   title-scoped counting to detect trend spikes and edit-war revert bursts.
+3. Publish detected anomalies to a separate topic (`wiki-anomalies`) as alert
+   events, preserving decoupling from core transactional processing.
+
+### Rationale
+- Windowed CEP provides deterministic short-horizon detection aligned with live
+  moderation and incident response needs.
+- Running topology logic beside, not inside, the primary consumer limits blast
+  radius and preserves ADR-026 processing guarantees.
+- Separate anomaly output topic enables independent subscribers, retention
+  policy, and alerting workflows.
+
+### Trade-offs
+- Kafka Streams introduces additional state and lifecycle management overhead
+  (rebalance behavior, local state directories, and startup ordering).
+- Fixed 60-second windows can miss slower-burn patterns and may require future
+  multi-window strategies.
+- Parallel processing paths increase testing surface to validate semantic
+  consistency between core processing and anomaly pipelines.
