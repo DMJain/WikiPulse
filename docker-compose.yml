@@ -103,8 +103,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    expose:
-      - "8080"
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
     networks:
       - wikipulse-net
     healthcheck:
@@ -170,7 +172,7 @@ services:
       - wikipulse-net
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest-alpine
+    image: clickhouse/clickhouse-server:23.8-alpine
     container_name: clickhouse
     environment:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
@@ -188,6 +190,12 @@ services:
         condition: service_healthy
     networks:
       - wikipulse-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q 'Ok.'"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
 
 networks:
   wikipulse-net:

@@ -2,14 +2,14 @@ package com.wikipulse.worker.config;
 
 import com.clickhouse.jdbc.ClickHouseDriver;
 import javax.sql.DataSource;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 
 @Configuration
@@ -43,9 +43,13 @@ public class ClickHouseConfig {
     return dataSource;
   }
 
+  // FIX: Use JdbcTemplate (not NamedParameterJdbcTemplate).
+  // clickhouse-jdbc 0.6.0 uses SqlBasedPreparedStatement which does NOT support JDBC
+  // positional '?' placeholders produced by NamedParameterJdbcTemplate — causing
+  // BadSqlGrammarException on every /api/v2/analytics/* call.
   @Bean(name = "clickHouseJdbcTemplate")
-  public NamedParameterJdbcTemplate clickHouseJdbcTemplate(
+  public JdbcTemplate clickHouseJdbcTemplate(
       @Qualifier("clickHouseDataSource") DataSource clickHouseDataSource) {
-    return new NamedParameterJdbcTemplate(clickHouseDataSource);
+    return new JdbcTemplate(clickHouseDataSource);
   }
 }
