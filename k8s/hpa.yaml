@@ -6,10 +6,10 @@
 # Target:    wikipulse-worker Deployment
 # Range:     minReplicas=1  (all 3 partitions serviced via consumer group
 #                            rebalancing — ADR-007, ADR-011)
-#            maxReplicas=6  (3 active consumers + 3 hot-standby for instant
-#                            failover without cold-start penalty — ADR-022)
+#            maxReplicas=5  (3 active consumers + 2 burst-capacity pods for
+#                            rapid absorbtion under edit storms)
 #
-# Metric:    CPU Utilization @ 70% of requests.cpu (500m → trigger at 350m)
+# Metric:    CPU Utilization @ 20% of requests.cpu (500m → trigger at 100m)
 #            Virtual Threads (ADR-002) only consume CPU during genuine compute
 #            (JSON deserialization, analytics scoring), making CPU a leading
 #            indicator of processing saturation — not a lagging one.
@@ -41,11 +41,11 @@ spec:
   # ── Replica Bounds ───────────────────────────────────────────────────────────
   # min=1: A single pod handles all 3 partitions during off-peak hours,
   #         saving ~1 vCPU and ~1 GiB RAM vs. the 3-pod baseline.
-  # max=6: 3 partitions × 2 = 6 upper bound.
-  #         Pods 4–6 are hot-standby consumers (0 partitions assigned by Kafka)
-  #         but absorb partition reassignments instantly on active-pod failure.
+  # max=5: 3 partitions + 2 burst-capacity pods.
+  #         Pods 4–5 may remain idle at Kafka assignment time but absorb
+  #         partition reassignments instantly on active-pod failure.
   minReplicas: 1
-  maxReplicas: 6
+  maxReplicas: 5
 
   # ── Scaling Metrics ──────────────────────────────────────────────────────────
   metrics:
@@ -54,10 +54,10 @@ spec:
         name: cpu
         target:
           type: Utilization
-          # 70% of requests.cpu (500m) = 350 milliCPU trigger threshold.
-          # 30% headroom absorbs the 15s HPA control-loop latency and the
-          # 60s scale-up stabilization window without JVM saturation.
-          averageUtilization: 70
+          # 20% of requests.cpu (500m) = 100 milliCPU trigger threshold.
+          # This lower threshold is used to force visible scaling behavior
+          # during the autoscaling crucible.
+          averageUtilization: 20
 
   # ── Scaling Behavior (Asymmetric) ────────────────────────────────────────────
   behavior:
@@ -73,7 +73,7 @@ spec:
       selectPolicy: Min      # Always choose the most conservative policy
 
     # Scale-UP: Aggressive — Wikipedia traffic surges are fast and bursty.
-    # +2 pods per 60s ensures we reach 6 replicas in ~90s from baseline (3).
+    # +2 pods per 60s ensures we can reach 5 replicas rapidly from baseline (3).
     # The 60s stabilization prevents micro-oscillation on momentary spikes.
     scaleUp:
       stabilizationWindowSeconds: 60

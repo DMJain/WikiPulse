@@ -4,7 +4,7 @@ metadata:
   name: wikipulse-worker
   annotations:
     # ADR-020: Base Kubernetes orchestration topology (3 replicas, 1-per-partition baseline).
-    # ADR-022: HPA (k8s/hpa.yaml) owns replica count at runtime (range: 1–6).
+    # ADR-022: HPA (k8s/hpa.yaml) owns replica count at runtime (range: 1–5).
     #          The static `replicas: 3` below acts as a safe fallback only if HPA is removed.
     #          During normal operation, the HPA controller overrides this value.
     scaling.policy: "hpa-managed"
@@ -28,6 +28,9 @@ spec:
         - name: ingestor
           image: wikipulse-ingestor:latest
           imagePullPolicy: Never
+          env:
+            - name: WIKIPULSE_CLICKHOUSE_URL
+              value: "jdbc:clickhouse://clickhouse:8123/default"
           resources:
             requests:
               memory: "512Mi"
@@ -35,17 +38,23 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "1000m"
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            failureThreshold: 120
+            periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: 8080
-            initialDelaySeconds: 15
+            initialDelaySeconds: 90
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
               port: 8080
-            initialDelaySeconds: 15
+            initialDelaySeconds: 60
             periodSeconds: 10
           envFrom:
             - configMapRef:
