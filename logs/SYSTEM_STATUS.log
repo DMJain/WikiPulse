@@ -124,3 +124,14 @@ Confidence Score: 0.0 for all tests due to missing postgres DB and CrashLoopBack
 [PHASE 25.7 COMPLETE] - [FRONTEND VALIDATED AND README PATCHED]
 [PHASE 25.8 COMPLETE] - [K8S WORKER SERVICE RECONCILED FOR FRONTEND ROUTING]
 [2026-04-15T00:56:19+05:30] [PHASE 25.8 - 502 GATEWAY FIX] Service[name=wikipulse-worker, type=ClusterIP, port=8080->8080, selector=app:wikipulse-worker] confirmed in k8s/service.yaml and reconciled via kubectl apply -f k8s/service.yaml (result: unchanged). Frontend nginx upstream host wikipulse-worker now has cluster DNS record. Self-review: Nginx proxy targets match; Deployment labels match Service selector. Confidence(service-level fix)=0.94. Residual risk: endpoints empty while worker pods are 0/1 Ready.
+[2026-04-15T01:08:32+05:30] [PHASE 26.2 COMPLETE] - [README NARRATIVE POLISH APPLIED] - [VERIFICATION PASSED].
+[2026-04-15T01:08:32+05:30] [INFO] Renamed README Kubernetes section to "Kubernetes Deployment & Live Demo" and aligned TOC anchor.
+[2026-04-15T01:08:32+05:30] [INFO] Promoted UI access to primary Step 5 with `minikube service wikipulse-frontend` and explicit "no load test required" guidance.
+[2026-04-15T01:08:32+05:30] [INFO] Load generation reframed as optional Step 6 ("The Autoscaling Crucible") with HPA-demo-only warning; cleanup renumbered to Step 7.
+[2026-04-15T01:08:32+05:30] [SELF-REVIEW] Live app access path and optional stress path are explicitly separated with zero ambiguity.
+[2026-04-15T01:08:32+05:30] [CONFIDENCE] 0.99.
+[2026-04-15T01:31:57+05:30] [PHASE 26.4 COMPLETE] - [FRONTEND DIAGNOSTICS, NETWORK PROOF, README FINALIZATION APPLIED].
+[2026-04-15T01:31:57+05:30] [IMPLEMENTATION] Created clickhouse-init-config, recycled ClickHouse pod, confirmed wikipulse-worker pods reached 1/1 Running, and validated service endpoints were populated.
+[2026-04-15T01:31:57+05:30] [SELF-REVIEW] Root cause was missing clickhouse-init-config causing ClickHouse mount failure and cascading worker non-readiness, which left frontend with no healthy upstreams and produced 502.
+[2026-04-15T01:31:57+05:30] [CONFIDENCE] 0.99.
+[2026-04-15T01:31:57+05:30] [FIX] In-pod curl from frontend to worker health endpoint returned HTTP 200; README now includes ConfigMap creation before apply and mandatory rollout wait before UI access.

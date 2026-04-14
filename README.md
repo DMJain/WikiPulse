@@ -33,7 +33,7 @@ The goal is explicit and portfolio-grade: demonstrate enterprise system design, 
 4. [Neo-Brutalist Command Center (Frontend)](#neo-brutalist-command-center-frontend)
 5. [Observability Stack (Prometheus + Grafana)](#observability-stack-prometheus--grafana)
 6. [Local Docker Fast-Start](#local-docker-fast-start)
-7. [Kubernetes Elastic Scaling Walkthrough](#kubernetes-elastic-scaling-walkthrough)
+7. [Kubernetes Deployment & Live Demo](#kubernetes-deployment--live-demo)
 8. [Testing Methodology and Quality Gates](#testing-methodology-and-quality-gates)
 9. [Portfolio Highlights](#portfolio-highlights)
 10. [Roadmap](#roadmap)
@@ -339,9 +339,9 @@ docker compose down
 
 ---
 
-## Kubernetes Elastic Scaling Walkthrough
+## Kubernetes Deployment & Live Demo
 
-This section demonstrates real pod autoscaling behavior under sustained API load.
+This section gets WikiPulse running on Minikube so you can view the live frontend immediately, then optionally stress it to demonstrate pod autoscaling behavior.
 
 ### 1) Start Minikube and metrics server
 
@@ -361,6 +361,7 @@ docker build -t wikipulse-frontend:latest ./frontend
 ### 3) Deploy infrastructure and app
 
 ```bash
+kubectl create configmap clickhouse-init-config --from-file=clickhouse/initdb.d/01_init_tables.sql
 kubectl apply -f k8s/infrastructure.yaml
 kubectl apply -f k8s/configmap.yaml
 kubectl apply -f k8s/secret.yaml
@@ -370,7 +371,15 @@ kubectl apply -f k8s/frontend-deployment.yaml
 kubectl apply -f k8s/hpa.yaml
 ```
 
-### 4) Validate baseline
+### 4) Wait for Readiness (Mandatory)
+
+You MUST wait for the worker deployment rollout to complete successfully before opening the frontend UI.
+
+```bash
+kubectl rollout status deployment/wikipulse-worker
+```
+
+### 5) Validate baseline
 
 ```bash
 kubectl get pods -o wide
@@ -378,15 +387,17 @@ kubectl get hpa wikipulse-worker-hpa
 kubectl top pods -l app=wikipulse-worker
 ```
 
-### Accessing the Kubernetes UI
+### 6) View the Live Application
+
+Run this command to open the React UI in your browser. You will immediately see live Wikipedia data flowing in naturally via the SSE stream. No load test is required to view the application.
 
 ```bash
 minikube service wikipulse-frontend
 ```
 
-This opens the React command center Service from your host and verifies frontend routing through Minikube.
+### 7) OPTIONAL: The Autoscaling Crucible (Load Test)
 
-### 5) Apply sustained load
+Warning: This step is only necessary if you want to forcefully trigger the Kubernetes Horizontal Pod Autoscaler for demonstration purposes.
 
 From Git Bash:
 
@@ -409,7 +420,7 @@ Expected outcome:
 2. Replica count scales out within policy bounds.
 3. Kafka lag spikes under stress then collapses as pods increase.
 
-### 6) Cleanup
+### 8) Cleanup
 
 ```bash
 kubectl delete -f k8s/hpa.yaml --ignore-not-found
