@@ -1,4 +1,4 @@
-# WikiPulse V3: Zero-Data-Loss Event Streaming Platform
+﻿# WikiPulse V3: Zero-Data-Loss Event Streaming Platform
 
 [![Java](https://img.shields.io/badge/Java-21-007396?logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.4.3-6DB33F?logo=spring&logoColor=white)](https://spring.io/projects/spring-boot)
@@ -315,6 +315,8 @@ docker compose ps
 curl http://localhost:8080/actuator/health
 ```
 
+`docker compose ps` checks container health/state and confirms how many services are currently running.
+
 ### Access points
 
 1. Frontend command center: `http://localhost:3000`
@@ -376,6 +378,14 @@ kubectl get hpa wikipulse-worker-hpa
 kubectl top pods -l app=wikipulse-worker
 ```
 
+### Accessing the Kubernetes UI
+
+```bash
+minikube service wikipulse-frontend
+```
+
+This opens the React command center Service from your host and verifies frontend routing through Minikube.
+
 ### 5) Apply sustained load
 
 From Git Bash:
@@ -388,6 +398,7 @@ In parallel watchers:
 
 ```bash
 kubectl get hpa wikipulse-worker-hpa -w
+kubectl get pods -o wide -w
 kubectl get pods -l app=wikipulse-worker -w
 kubectl describe hpa wikipulse-worker-hpa
 ```

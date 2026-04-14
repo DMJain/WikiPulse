@@ -121,3 +121,6 @@ Confidence Score: 0.0 for all tests due to missing postgres DB and CrashLoopBack
 [PHASE 25.5 COMPLETE] - [API 500 ERRORS RESOLVED, MAVEN AND DOCKER E2E VERIFIED]
 [PHASE 25.6 COMPLETE] - [K8S ELASTIC AUTOSCALING VERIFIED]
 [PHASE 26 COMPLETE] - [ULTIMATE PORTFOLIO README GENERATED].
+[PHASE 25.7 COMPLETE] - [FRONTEND VALIDATED AND README PATCHED]
+[PHASE 25.8 COMPLETE] - [K8S WORKER SERVICE RECONCILED FOR FRONTEND ROUTING]
+[2026-04-15T00:56:19+05:30] [PHASE 25.8 - 502 GATEWAY FIX] Service[name=wikipulse-worker, type=ClusterIP, port=8080->8080, selector=app:wikipulse-worker] confirmed in k8s/service.yaml and reconciled via kubectl apply -f k8s/service.yaml (result: unchanged). Frontend nginx upstream host wikipulse-worker now has cluster DNS record. Self-review: Nginx proxy targets match; Deployment labels match Service selector. Confidence(service-level fix)=0.94. Residual risk: endpoints empty while worker pods are 0/1 Ready.
