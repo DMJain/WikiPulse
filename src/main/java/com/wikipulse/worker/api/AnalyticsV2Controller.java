@@ -2,7 +2,7 @@ package com.wikipulse.worker.api;
 
 import com.wikipulse.worker.api.dto.EditBehaviorDto;
 import com.wikipulse.worker.api.dto.GeoCountDto;
-import com.wikipulse.worker.repository.ClickHouseAnalyticsRepository;
+import com.wikipulse.worker.repository.PostgresAnalyticsRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -25,10 +25,10 @@ public class AnalyticsV2Controller {
   private static final String PROJECT_WIKIMEDIA_COMMONS = "wikimedia-commons";
   private static final String PROJECT_WIKIDATA = "wikidata";
 
-  private final ClickHouseAnalyticsRepository clickHouseAnalyticsRepository;
+  private final PostgresAnalyticsRepository postgresAnalyticsRepository;
 
-  public AnalyticsV2Controller(ClickHouseAnalyticsRepository clickHouseAnalyticsRepository) {
-    this.clickHouseAnalyticsRepository = clickHouseAnalyticsRepository;
+  public AnalyticsV2Controller(PostgresAnalyticsRepository postgresAnalyticsRepository) {
+    this.postgresAnalyticsRepository = postgresAnalyticsRepository;
   }
 
   @GetMapping("/geo")
@@ -38,7 +38,7 @@ public class AnalyticsV2Controller {
       @RequestParam(required = false) String timeframe) {
     Instant since = parseSince(timeframe);
     String normalizedProject = normalizeProject(project);
-    return clickHouseAnalyticsRepository.getGeoDistribution(normalizedProject, isBot, since);
+    return postgresAnalyticsRepository.getGeoDistribution(normalizedProject, isBot, since);
   }
 
   @GetMapping("/behavior")
@@ -48,7 +48,7 @@ public class AnalyticsV2Controller {
       @RequestParam(required = false) String timeframe) {
     Instant since = parseSince(timeframe);
     String normalizedProject = normalizeProject(project);
-    return clickHouseAnalyticsRepository.getEditBehavior(normalizedProject, isBot, since);
+    return postgresAnalyticsRepository.getEditBehavior(normalizedProject, isBot, since);
   }
 
   private static String normalizeProject(String project) {

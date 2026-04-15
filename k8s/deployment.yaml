@@ -28,9 +28,6 @@ spec:
         - name: ingestor
           image: wikipulse-ingestor:latest
           imagePullPolicy: Never
-          env:
-            - name: WIKIPULSE_CLICKHOUSE_URL
-              value: "jdbc:clickhouse://clickhouse:8123/default"
           resources:
             requests:
               memory: "512Mi"

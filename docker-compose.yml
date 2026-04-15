@@ -103,8 +103,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      clickhouse:
-        condition: service_healthy
     ports:
       - "8080:8080"
     networks:
@@ -171,32 +169,6 @@ services:
     networks:
       - wikipulse-net
 
-  clickhouse:
-    image: clickhouse/clickhouse-server:23.8-alpine
-    container_name: clickhouse
-    environment:
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
-      CLICKHOUSE_PASSWORD: ""
-    ports:
-      - "8123:8123"
-      - "9000:9000"
-    volumes:
-      - clickhouse_data:/var/lib/clickhouse
-      - ./clickhouse/initdb.d:/docker-entrypoint-initdb.d:ro
-    depends_on:
-      kafka:
-        condition: service_healthy
-      zookeeper:
-        condition: service_healthy
-    networks:
-      - wikipulse-net
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q 'Ok.'"]
-      interval: 10s
-      timeout: 5s
-      retries: 8
-      start_period: 30s
-
 networks:
   wikipulse-net:
     driver: bridge
@@ -204,4 +176,3 @@ networks:
 volumes:
   pgdata:
     name: wikipulse_pgdata
-  clickhouse_data:

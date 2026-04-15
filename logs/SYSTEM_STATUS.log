@@ -135,3 +135,14 @@ Confidence Score: 0.0 for all tests due to missing postgres DB and CrashLoopBack
 [2026-04-15T01:31:57+05:30] [SELF-REVIEW] Root cause was missing clickhouse-init-config causing ClickHouse mount failure and cascading worker non-readiness, which left frontend with no healthy upstreams and produced 502.
 [2026-04-15T01:31:57+05:30] [CONFIDENCE] 0.99.
 [2026-04-15T01:31:57+05:30] [FIX] In-pod curl from frontend to worker health endpoint returned HTTP 200; README now includes ConfigMap creation before apply and mandatory rollout wait before UI access.
+[2026-04-15T14:45:50+05:30] [PHASE 27 COMPLETE] - [ARCHITECTURE BLUEPRINT AUTHORED AND SAVED].
+[2026-04-15T14:45:50+05:30] [IMPLEMENTATION] Created ARCHITECTURE.md with exact end-to-end flow, exhaustive Mermaid sequence UML, PostgreSQL and ClickHouse schema definitions, Redis key design, frontend dual-hydration/state model, and ADR trade-off analysis.
+[2026-04-15T14:45:50+05:30] [SELF-REVIEW] Blueprint verified against source code, deployment manifests, ClickHouse live DDL, and PostgreSQL live table introspection.
+[2026-04-15T14:45:50+05:30] [CONFIDENCE] 0.99.
+[2026-04-15T14:45:50+05:30] [FIX] Reconciled Redis velocity-key wording to implementation truth: bot:velocity:<userName> with TTL window semantics.
+[2026-04-15T19:44:26+05:30] [PHASE 28.1 COMPLETE] - [PRAGMATIC REFACTOR: CLICKHOUSE REMOVED, POSTGRES ANALYTICS ADOPTED].
+[2026-04-15T19:44:26+05:30] [IMPLEMENTATION] Removed ClickHouse from docker-compose and Kubernetes infrastructure manifests, deleted clickhouse/ directory, removed ClickHouse Java config/repository/tests/dependencies, and rewired /api/v2/analytics endpoints to PostgresAnalyticsRepository.
+[2026-04-15T19:44:26+05:30] [SELF-REVIEW] Verified no ClickHouse references remain in runtime infrastructure or backend executable code paths; Maven compile succeeds with PostgreSQL-backed analytics.
+[2026-04-15T19:44:26+05:30] [CONFIDENCE] 0.98.
+[2026-04-15T19:44:26+05:30] [FIX] Added processed_edits analytics indexes (edit_timestamp, is_bot+edit_timestamp, server_url+edit_timestamp, country+edit_timestamp) to reduce full scans for timeframe/project/bot filtered queries.
+[PHASE 28.2 COMPLETE]

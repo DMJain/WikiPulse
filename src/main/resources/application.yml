@@ -68,8 +68,3 @@ management:
 wikipulse:
   smoke-test:
     enabled: ${WIKIPULSE_SMOKE_TEST_ENABLED:false}
-  clickhouse:
-    # Local IDE fallback: set WIKIPULSE_CLICKHOUSE_URL=jdbc:clickhouse://localhost:8123/default
-    url: ${WIKIPULSE_CLICKHOUSE_URL:jdbc:clickhouse://clickhouse:8123/default}
-    username: ${WIKIPULSE_CLICKHOUSE_USERNAME:default}
-    password: ${WIKIPULSE_CLICKHOUSE_PASSWORD:}

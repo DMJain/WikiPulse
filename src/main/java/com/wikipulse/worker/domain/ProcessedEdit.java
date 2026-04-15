@@ -14,7 +14,11 @@ import org.springframework.data.domain.Persistable;
     indexes = {
       @Index(name = "idx_user_timestamp", columnList = "user_name, edit_timestamp"),
       @Index(name = "idx_page_title", columnList = "page_title"),
-      @Index(name = "idx_server_url", columnList = "server_url")
+      @Index(name = "idx_server_url", columnList = "server_url"),
+      @Index(name = "idx_edit_timestamp", columnList = "edit_timestamp"),
+      @Index(name = "idx_is_bot_timestamp", columnList = "is_bot, edit_timestamp"),
+      @Index(name = "idx_server_url_timestamp", columnList = "server_url, edit_timestamp"),
+      @Index(name = "idx_country_timestamp", columnList = "country, edit_timestamp")
     })
 public class ProcessedEdit implements Persistable<Long> {
 
